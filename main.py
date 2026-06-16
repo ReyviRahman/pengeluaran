@@ -6,6 +6,8 @@ import httpx
 from fastapi import FastAPI, Header, HTTPException, Request
 
 import config
+import gemini
+import tools
 
 logging.basicConfig(
     level=logging.INFO,
@@ -44,11 +46,47 @@ def log_message(update_id: int, message: dict) -> None:
     logger.info("Pesan masuk: %s", log_entry)
 
 
+async def send_message(chat_id: int, text: str) -> None:
+    """Mengirim pesan balasan ke Telegram."""
+    url = f"{TELEGRAM_API_BASE}/sendMessage"
+    payload = {
+        "chat_id": chat_id,
+        "text": text,
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(url, json=payload)
+            response.raise_for_status()
+            result = response.json()
+
+        if not result.get("ok"):
+            logger.error("Gagal kirim pesan: %s", result)
+        else:
+            logger.info("Pesan balasan terkirim ke chat %s", chat_id)
+    except Exception as exc:
+        logger.error("Error saat kirim pesan ke Telegram: %s", exc)
+
+
+async def process_update(update_id: int, message: dict) -> None:
+    """Mencatat pesan dan mengirim balasan melalui Gemini."""
+    log_message(update_id, message)
+
+    chat_id = message.get("chat", {}).get("id")
+    text = message.get("text", "")
+
+    if not chat_id or not text:
+        return
+
+    reply = await gemini.generate_response(text)
+    await send_message(chat_id, reply)
+
+
 async def set_webhook() -> dict | None:
     """Mendaftarkan webhook ke Telegram."""
     url = f"{TELEGRAM_API_BASE}/setWebhook"
 
-    webhook_url = config.WEBHOOK_URL.rstrip("/")
+    webhook_url = f"{config.WEBHOOK_URL.rstrip('/')}/webhook"
 
     payload = {
         "url": webhook_url,
@@ -120,7 +158,7 @@ async def webhook(
     if not message:
         return {"ok": True}
 
-    log_message(update_id, message)
+    await process_update(update_id, message)
     return {"ok": True}
 
 
@@ -131,6 +169,12 @@ async def manual_set_webhook():
     if result is None:
         raise HTTPException(status_code=503, detail="Gagal set webhook")
     return {"ok": True, "result": result}
+
+
+@app.get("/check-sheet")
+async def check_sheet():
+    """Endpoint diagnosis untuk memeriksa koneksi ke Google Sheet."""
+    return tools.check_sheet_connection()
 
 
 if __name__ == "__main__":
