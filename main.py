@@ -13,6 +13,9 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
 )
+# Matikan logging httpx agar URL dengan token bot tidak tercetak di log.
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 TELEGRAM_API_BASE = f"https://api.telegram.org/bot{config.TELEGRAM_BOT_TOKEN}"
@@ -68,6 +71,70 @@ async def send_message(chat_id: int, text: str) -> None:
         logger.error("Error saat kirim pesan ke Telegram: %s", exc)
 
 
+async def send_chat_action(chat_id: int, action: str) -> None:
+    """Mengirim aksi chat (misalnya typing) ke Telegram."""
+    url = f"{TELEGRAM_API_BASE}/sendChatAction"
+    payload = {
+        "chat_id": chat_id,
+        "action": action,
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(url, json=payload)
+            response.raise_for_status()
+    except Exception as exc:
+        logger.error("Error saat kirim chat action ke Telegram: %s", exc)
+
+
+GREETING_WORDS = {"halo", "hai", "hi", "hello", "pagi", "siang", "sore", "malam", "hey"}
+HOW_ARE_YOU_QUESTIONS = {"apa kabar", "gimana kabar", "bagaimana kabar"}
+
+
+def is_greeting(text: str) -> bool:
+    """Deteksi apakah pesan dari user adalah sapaan."""
+    normalized = text.lower().strip()
+    words = normalized.split()
+    if not words:
+        return False
+    if words[0].strip(",.!?") in GREETING_WORDS:
+        return True
+    if any(phrase in normalized for phrase in HOW_ARE_YOU_QUESTIONS):
+        return True
+    return False
+
+
+def get_simple_reply(text: str) -> str | None:
+    """Balasan cepat untuk sapaan dan jawaban santai user."""
+    normalized = text.lower().strip(".,!? ")
+    words = normalized.split()
+    if not words:
+        return None
+
+    # Sapaan yang disertai pertanyaan kabar.
+    if is_greeting(text) and any(phrase in normalized for phrase in HOW_ARE_YOU_QUESTIONS):
+        return "Hai Reyyy, aku baik. Kamu gimana?"
+
+    # Sapaan biasa.
+    if is_greeting(text):
+        return "Hai Reyyy bagaimana hari mu?"
+
+    # Jawaban santai user atas pertanyaan "bagaimana harimu".
+    if len(words) <= 4:
+        positive = {"amann", "aman", "baik", "baik-baik", "baik2", "sehat", "alhamdulillah", "syukurlah", "senang", "mantap"}
+        neutral = {"lumayan", "biasa", "oke", "ok", "okey"}
+        negative = {"capek", "lelah", "ngantuk", "buruk", "sakit", "sedih", "biasa aja"}
+
+        if any(w in positive for w in words):
+            return "Syukurlah kalo gitu. Ada yang bisa aku bantu hari ini?"
+        if any(w in neutral for w in words):
+            return "Oke, semoga harimu makin baik ya. Ada yang mau ditanyain?"
+        if any(w in negative for w in words):
+            return "Semangat ya Reyyy. Kalau ada yang mau dibantu soal keuangan, bilang aja."
+
+    return None
+
+
 async def process_update(update_id: int, message: dict) -> None:
     """Mencatat pesan dan mengirim balasan melalui Gemini."""
     log_message(update_id, message)
@@ -78,7 +145,12 @@ async def process_update(update_id: int, message: dict) -> None:
     if not chat_id or not text:
         return
 
-    reply = await gemini.generate_response(text)
+    await send_chat_action(chat_id, "typing")
+
+    reply = get_simple_reply(text)
+    if reply is None:
+        reply = await gemini.generate_response(text)
+
     await send_message(chat_id, reply)
 
 

@@ -3,6 +3,7 @@ import os
 import traceback
 from datetime import datetime
 from typing import Any
+import re
 
 import gspread
 from gspread.exceptions import APIError, WorksheetNotFound
@@ -136,9 +137,70 @@ def check_sheet_connection() -> dict[str, Any]:
         }
 
 
+# Mapping nama bulan Indonesia ke bahasa Inggris untuk parsing tanggal.
+_BULAN_ID_TO_EN = {
+    "januari": "January",
+    "februari": "February",
+    "maret": "March",
+    "april": "April",
+    "mei": "May",
+    "juni": "June",
+    "juli": "July",
+    "agustus": "August",
+    "september": "September",
+    "oktober": "October",
+    "november": "November",
+    "desember": "December",
+}
+
+def _parse_amount(value: str) -> int:
+    if not value:
+        return 0
+
+    value = str(value)
+    value = value.replace("Rp", "")
+    value = value.replace(".", "")
+    value = value.replace(",", "")
+    value = value.strip()
+
+    try:
+        return int(value)
+    except ValueError:
+        return 0
+
+
 def _parse_date(date_str: str) -> str:
-    """Normalisasi format tanggal menjadi YYYY-MM-DD."""
-    date_str = date_str.strip()
+    """Normalisasi format tanggal menjadi YYYY-MM-DD.
+
+    Mendukung:
+    - 16/06/2026
+    - 16-06-2026
+    - 2026-06-16
+    - 16 Jun 2026
+    - 16 Juni 2026
+    - Selasa, 16 Juni 2026
+    """
+    if not date_str:
+        return ""
+
+    date_str = str(date_str).strip().lower()
+
+    # Hapus nama hari Indonesia di depan tanggal
+    # Contoh: "Selasa, 16 Juni 2026" -> "16 Juni 2026"
+    date_str = re.sub(
+        r"^(senin|selasa|rabu|kamis|jumat|jum'at|sabtu|minggu)\s*,?\s*",
+        "",
+        date_str,
+    )
+
+    # Konversi nama bulan Indonesia ke Inggris agar strptime bisa parse
+    for id_month, en_month in _BULAN_ID_TO_EN.items():
+        if id_month in date_str:
+            date_str = date_str.replace(id_month, en_month)
+            break
+
+    date_str = date_str.title()
+
     formats = [
         "%Y-%m-%d",
         "%d/%m/%Y",
@@ -148,11 +210,13 @@ def _parse_date(date_str: str) -> str:
         "%d/%m/%y",
         "%d-%m-%y",
     ]
+
     for fmt in formats:
         try:
             return datetime.strptime(date_str, fmt).strftime("%Y-%m-%d")
         except ValueError:
             continue
+
     return date_str
 
 
@@ -210,19 +274,65 @@ def get_expenses_by_date(date_str: str) -> dict[str, Any]:
 
         normalized_target = _parse_date(date_str)
         results = []
+
+        logger.info("Target tanggal: raw=%r parsed=%r", date_str, normalized_target)
+
         for row in values:
             if not row:
                 continue
-            if _parse_date(row[0]) == normalized_target:
+
+            raw_date = row[0] if len(row) > 0 else ""
+            parsed_date = _parse_date(raw_date)
+
+            logger.info(
+                "DEBUG TGL: raw=%r | parsed=%r | target=%r",
+                raw_date,
+                parsed_date,
+                normalized_target,
+            )
+
+            if parsed_date == normalized_target:
                 results.append(_row_to_dict(row))
+
+        logger.info(
+            "Hasil pencarian tanggal %r: %s data",
+            normalized_target,
+            len(results),
+        )
+
+        total_pengeluaran = sum(
+            _parse_amount(item.get("Pengeluaran", ""))
+            for item in results
+        )
 
         return {
             "status": "success",
             "data": results,
+            "summary": {
+                "tanggal": normalized_target,
+                "jumlah_data": len(results),
+                "total_pengeluaran": total_pengeluaran,
+            },
             "message": f"Ditemukan {len(results)} pengeluaran pada tanggal {date_str}",
         }
     except Exception as exc:
         return _format_error(exc, "Gagal mencari pengeluaran by date")
+
+
+def get_expenses_today() -> dict[str, Any]:
+    """Cari pengeluaran untuk tanggal hari ini."""
+    today = datetime.now().strftime("%Y-%m-%d")
+    return get_expenses_by_date(today)
+
+
+def get_expenses_by_day_month(day: int, month: int) -> dict[str, Any]:
+    """Cari pengeluaran berdasarkan hari dan bulan, menggunakan tahun saat ini.
+
+    Berguna ketika user menyebut tanggal tanpa tahun, misalnya '16 Juni'.
+    """
+    year = datetime.now().year
+    date_str = f"{day:02d}/{month:02d}/{year}"
+    return get_expenses_by_date(date_str)
 
 
 def get_expense_summary() -> dict[str, Any]:
@@ -301,18 +411,55 @@ TOOL_DECLARATIONS = [
     {
         "name": "get_expenses_by_date",
         "description": (
-            "Cari pengeluaran pada tanggal tertentu. "
-            "Gunakan jika user menanyakan pengeluaran di tanggal spesifik."
+            "Cari pengeluaran pada tanggal tertentu di Google Sheet. "
+            "WAJIB dipanggil setiap kali user menanyakan pengeluaran di tanggal spesifik, "
+            "misalnya 'pengeluaran tanggal 16 Juni', '16/06/2026', atau 'berapa pengeluaran kemarin'. "
+            "Jangan pernah mengarang jawaban tanpa membaca data sheet terlebih dahulu."
         ),
         "parameters": {
             "type": "object",
             "properties": {
                 "date_str": {
                     "type": "string",
-                    "description": "Tanggal yang dicari, contoh: '15/06/2026' atau '2026-06-15'",
+                    "description": "Tanggal yang dicari dalam format 'YYYY-MM-DD', 'DD/MM/YYYY', atau '16 Juni 2026'",
                 }
             },
             "required": ["date_str"],
+        },
+    },
+    {
+        "name": "get_expenses_today",
+        "description": (
+            "Cari pengeluaran untuk hari ini (tanggal saat ini). "
+            "Gunakan jika user bertanya 'pengeluaran hari ini', 'hari ini pengeluaran apa', "
+            "atau pertanyaan serupa tentang pengeluaran hari ini."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+    {
+        "name": "get_expenses_by_day_month",
+        "description": (
+            "Cari pengeluaran berdasarkan hari dan bulan saja, menggunakan tahun saat ini. "
+            "WAJIB dipanggil jika user menyebut tanggal tanpa tahun, misalnya "
+            "'pengeluaran tanggal 16 Juni', 'tanggal 16/06', atau '16 Juni'. "
+            "Jangan pernah menebak tahun sendiri."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "day": {
+                    "type": "integer",
+                    "description": "Tanggal (1-31), contoh: 16",
+                },
+                "month": {
+                    "type": "integer",
+                    "description": "Bulan (1-12), contoh: 6 untuk Juni",
+                },
+            },
+            "required": ["day", "month"],
         },
     },
     {
@@ -344,6 +491,8 @@ TOOL_FUNCTIONS = {
     "get_all_expenses": get_all_expenses,
     "get_recent_expenses": get_recent_expenses,
     "get_expenses_by_date": get_expenses_by_date,
+    "get_expenses_by_day_month": get_expenses_by_day_month,
+    "get_expenses_today": get_expenses_today,
     "get_expense_summary": get_expense_summary,
     "get_current_date": get_current_date,
 }

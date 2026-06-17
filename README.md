@@ -1,6 +1,6 @@
 # Belajar AI Telegram Bot
 
-Project ini menerima pesan masuk dari Telegram Bot menggunakan webhook, lalu mencatat pesan ke log.
+Project ini menerima pesan masuk dari Telegram Bot menggunakan webhook, lalu membalasnya menggunakan Google Gemini dengan bantuan function calling untuk membaca Google Sheet.
 
 ## Persiapan
 
@@ -18,6 +18,9 @@ Project ini menerima pesan masuk dari Telegram Bot menggunakan webhook, lalu men
    WEBHOOK_SECRET=secret_acak_untuk_webhook
    GEMINI_API_KEY=api_key_dari_google_ai_studio
    GEMINI_MODEL=gemini-1.5-flash
+   GOOGLE_SHEETS_CREDENTIALS_PATH=credentials.json
+   SPREADSHEET_ID=spreadsheet_id_kamu
+   SHEET_NAME=Sheet1
    ```
 
    - `TELEGRAM_BOT_TOKEN`: token yang diberikan BotFather.
@@ -34,9 +37,8 @@ Project ini menerima pesan masuk dari Telegram Bot menggunakan webhook, lalu men
 1. **Buat service account** di [Google Cloud Console](https://console.cloud.google.com/iam-admin/serviceaccounts).
 2. **Download file credentials JSON** dan simpan di project ini, misalnya `credentials.json`.
 3. **Enable Google Sheets API** di project Google Cloud kamu.
-4. **Share Google Sheet** ke email service account (email ada di dalam file JSON, biasanya berakhiran `@...gserviceaccount.com`).
-5. **Share Google Sheet** ke email service account yang ada di `credentials.json`.
-6. Isi `.env`:
+4. **Share Google Sheet** ke email service account yang ada di `credentials.json` (email biasanya berakhiran `@...gserviceaccount.com`).
+5. Isi `.env`:
 
    ```env
    GOOGLE_SHEETS_CREDENTIALS_PATH=credentials.json
@@ -86,6 +88,8 @@ Setelah setup Google Sheets selesai, kamu bisa bertanya seperti ini ke bot:
 - "10 pengeluaran terakhir saya apa saja?"
 - "Total pengeluaran dan saldo akhir saya berapa?"
 - "Ada pengeluaran tanggal 15 Juni 2026 apa saja?"
+- "Pengeluaran tanggal 16 Juni"
+- "Tanggal berapa hari ini?"
 - "Ringkasan keuangan saya"
 
 ## Catatan Keamanan

@@ -1,5 +1,5 @@
+import json
 import logging
-from typing import Any
 
 from google import genai
 from google.genai import types
@@ -20,17 +20,18 @@ def _build_gemini_tools() -> list[types.Tool]:
     """Mengubah TOOL_DECLARATIONS (dict) menjadi types.Tool untuk google-genai SDK."""
     declarations = []
     for decl in tools.TOOL_DECLARATIONS:
+        parameters = decl.get("parameters", {"type": "object", "properties": {}})
         declarations.append(
             types.FunctionDeclaration(
                 name=decl["name"],
                 description=decl["description"],
                 parameters=types.Schema(
-                    type=decl["parameters"].get("type", "object"),
+                    type=parameters.get("type", "object"),
                     properties={
                         k: types.Schema(type=v.get("type", "string"), description=v.get("description", ""))
-                        for k, v in decl["parameters"].get("properties", {}).items()
+                        for k, v in parameters.get("properties", {}).items()
                     },
-                    required=decl["parameters"].get("required", []),
+                    required=parameters.get("required", []),
                 ),
             )
         )
@@ -47,10 +48,26 @@ async def generate_response(prompt: str) -> str:
         client = get_client()
         gemini_tools = _build_gemini_tools()
 
+        system_instruction = (
+            "Kamu adalah asisten keuangan pribadi. "
+            "Setiap kali user bertanya tentang pengeluaran, saldo, atau data keuangan, "
+            "kamu WAJIB memanggil tool yang tersedia untuk membaca data dari Google Sheet. "
+            "Jangan pernah mengarang atau menebak jawaban. "
+            "Jika user bertanya tentang tanggal hari ini, panggil get_current_date. "
+            "Jika user bertanya 'pengeluaran hari ini', panggil get_expenses_today. "
+            "Jika user bertanya pengeluaran tanggal tertentu dengan tahun lengkap, panggil get_expenses_by_date. "
+            "Jika user bertanya pengeluaran tanggal tanpa tahun (misalnya '16 Juni' atau 'tanggal 16/06'), "
+            "panggil get_expenses_by_day_month dengan day dan month sebagai integer. "
+            "Jangan pernah menebak tahun sendiri."
+        )
+
         response = client.models.generate_content(
             model=config.GEMINI_MODEL,
             contents=prompt,
-            config=types.GenerateContentConfig(tools=gemini_tools),
+            config=types.GenerateContentConfig(
+                tools=gemini_tools,
+                system_instruction=system_instruction,
+            ),
         )
 
         candidate = response.candidates[0]
