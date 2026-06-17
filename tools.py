@@ -80,8 +80,8 @@ def _get_sheets_client() -> gspread.Client:
         raise
 
 
-def _get_sheet_values() -> list[list[str]]:
-    """Membaca seluruh data sheet mulai dari A2."""
+def _get_worksheet() -> gspread.Worksheet:
+    """Membuka worksheet yang dikonfigurasi di .env."""
     if not config.SPREADSHEET_ID:
         raise ValueError("SPREADSHEET_ID belum diatur di .env")
 
@@ -105,10 +105,14 @@ def _get_sheet_values() -> list[list[str]]:
         raise
 
     try:
-        worksheet = spreadsheet.worksheet(config.SHEET_NAME)
+        return spreadsheet.worksheet(config.SHEET_NAME)
     except WorksheetNotFound:
         raise WorksheetNotFound(f"Sheet '{config.SHEET_NAME}' tidak ditemukan")
 
+
+def _get_sheet_values() -> list[list[str]]:
+    """Membaca seluruh data sheet mulai dari A2."""
+    worksheet = _get_worksheet()
     values = worksheet.get_values("A2:F")
     logger.info("Berhasil membaca %s baris data", len(values))
     return values
@@ -154,17 +158,37 @@ _BULAN_ID_TO_EN = {
 }
 
 def _parse_amount(value: str) -> int:
+    """Parse nominal dari string, mendukung format Indonesia dan singkatan.
+
+    Contoh:
+    - 50000, Rp 50.000, 50,000 -> 50000
+    - 10rb, 1rb, 15k, 2k -> 15000, 1000, 15000, 2000
+    - 1jt, 2.5jt -> 1000000, 2500000
+    """
     if not value:
         return 0
 
-    value = str(value)
-    value = value.replace("Rp", "")
+    value = str(value).lower().strip()
+    value = value.replace("rp", "")
+    value = value.replace(" ", "")
+
+    multiplier = 1
+    if value.endswith("rb"):
+        multiplier = 1000
+        value = value[:-2]
+    elif value.endswith("k"):
+        multiplier = 1000
+        value = value[:-1]
+    elif value.endswith("jt"):
+        multiplier = 1_000_000
+        value = value[:-2]
+
     value = value.replace(".", "")
     value = value.replace(",", "")
     value = value.strip()
 
     try:
-        return int(value)
+        return int(float(value) * multiplier)
     except ValueError:
         return 0
 
@@ -214,6 +238,21 @@ def _parse_date(date_str: str) -> str:
     for fmt in formats:
         try:
             return datetime.strptime(date_str, fmt).strftime("%Y-%m-%d")
+        except ValueError:
+            continue
+
+    # Fallback untuk tanggal tanpa tahun, gunakan tahun saat ini.
+    yearless_formats = [
+        "%d %b",
+        "%d %B",
+        "%d/%m",
+        "%d-%m",
+    ]
+    for fmt in yearless_formats:
+        try:
+            parsed = datetime.strptime(date_str, fmt)
+            now = datetime.now()
+            return parsed.replace(year=now.year).strftime("%Y-%m-%d")
         except ValueError:
             continue
 
@@ -376,11 +415,108 @@ def get_current_date() -> dict[str, Any]:
         return _format_error(exc, "Gagal mendapatkan tanggal sekarang")
 
 
+def _parse_expense_input(text: str) -> dict[str, Any]:
+    """Parse input pengeluaran dari user menjadi tanggal, keterangan, dan nominal.
+
+    Format yang didukung:
+    - "makan siang 50000"
+    - "16/06/2026 makan siang 50000"
+    - "16 Juni Makan Es Krim 20rb"
+    """
+    words = text.strip().split()
+    if len(words) < 2:
+        return {"error": "Input harus memiliki keterangan dan nominal."}
+
+    amount = _parse_amount(words[-1])
+    if amount <= 0:
+        return {"error": "Nominal tidak valid. Pastikan ada nominal di akhir pesan, misalnya 50000 atau 10rb."}
+
+    # Coba parse tanggal di awal kalimat, dari kandidat terpanjang ke terpendek.
+    max_date_words = min(4, len(words) - 2)
+    date_str = ""
+    date_end_index = 0
+    for i in range(max_date_words, 0, -1):
+        candidate = " ".join(words[:i])
+        parsed = _parse_date(candidate)
+        if re.match(r"^\d{4}-\d{2}-\d{2}$", parsed):
+            date_str = parsed
+            date_end_index = i
+            break
+
+    if not date_str:
+        date_str = datetime.now().strftime("%Y-%m-%d")
+
+    description = " ".join(words[date_end_index:-1]).strip()
+    if not description:
+        return {"error": "Keterangan tidak boleh kosong."}
+
+    return {
+        "date": date_str,
+        "description": description,
+        "amount": amount,
+    }
+
+
+def insert_expense(text: str) -> dict[str, Any]:
+    """Catat pengeluaran baru ke Google Sheet (hanya kolom A, B, C)."""
+    try:
+        parsed = _parse_expense_input(text)
+        if "error" in parsed:
+            return {"status": "error", "message": parsed["error"]}
+
+        worksheet = _get_worksheet()
+
+        amount = parsed["amount"]
+        description = parsed["description"]
+
+        date_display = datetime.strptime(
+            parsed["date"], "%Y-%m-%d"
+        ).strftime("%d/%m/%Y")
+
+        row = [date_display, description, amount]
+
+        worksheet.append_row(row, value_input_option="USER_ENTERED")
+
+        formatted_amount = f"Rp {amount:,}".replace(",", ".")
+        return {
+            "status": "success",
+            "message": f"Berhasil mencatat pengeluaran '{description}' sebesar {formatted_amount} pada {date_display}.",
+            "data": {
+                "Tgl": date_display,
+                "Keterangan": description,
+                "Pengeluaran": amount,
+            },
+        }
+
+    except Exception as exc:
+        return _format_error(exc, "Gagal mencatat pengeluaran")
+
+
 # -----------------------------------------------------------------------------
 # FUNCTION DECLARATIONS untuk Gemini (mengikuti pola tools-contoh.py)
 # -----------------------------------------------------------------------------
 
 TOOL_DECLARATIONS = [
+    {
+        "name": "insert_expense",
+        "description": (
+            "Catat pengeluaran baru ke Google Sheet. "
+            "WAJIB dipanggil ketika user ingin menambahkan pengeluaran, misalnya "
+            "'makan siang 50rb', 'bayar parkir 10k', '16 Juni Makan Es Krim 20rb', "
+            "atau '16/06/2026 beli pulsa 50.000'. "
+            "Jangan pernah memanggil tool ini jika user tidak menyebutkan keterangan atau nominal."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "text": {
+                    "type": "string",
+                    "description": "Seluruh pesan user yang berisi keterangan dan nominal pengeluaran, contoh: 'makan siang 50rb'",
+                }
+            },
+            "required": ["text"],
+        },
+    },
     {
         "name": "get_all_expenses",
         "description": (
@@ -488,6 +624,7 @@ TOOL_DECLARATIONS = [
 ]
 
 TOOL_FUNCTIONS = {
+    "insert_expense": insert_expense,
     "get_all_expenses": get_all_expenses,
     "get_recent_expenses": get_recent_expenses,
     "get_expenses_by_date": get_expenses_by_date,
