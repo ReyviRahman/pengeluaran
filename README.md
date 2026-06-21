@@ -64,6 +64,50 @@ uvicorn main:app --host 0.0.0.0 --port 8000
 
 Pada saat startup, aplikasi akan otomatis mendaftarkan webhook ke Telegram.
 
+## Menjalankan dengan Docker
+
+Project ini sudah menyertakan `Dockerfile` dan `docker-compose.yml` yang menjalankan aplikasi beserta database PostgreSQL.
+
+1. Pastikan Docker dan Docker Compose sudah terinstall.
+
+2. Copy `.env.example` ke `.env` dan isi semua nilai yang diperlukan (termasuk bagian PostgreSQL):
+
+   ```bash
+   cp .env.example .env
+   ```
+
+3. Pastikan file `credentials.json` (service account Google Cloud) berada di root project.
+
+4. Jalankan stack:
+
+   ```bash
+   docker compose up -d
+   ```
+
+5. Cek health check:
+
+   ```bash
+   curl http://localhost:8000/
+   ```
+
+6. Untuk melihat log:
+
+   ```bash
+   docker compose logs -f app
+   ```
+
+7. Untuk menghentikan:
+
+   ```bash
+   docker compose down
+   ```
+
+   Jika ingin menghapus volume database (data akan hilang):
+
+   ```bash
+   docker compose down -v
+   ```
+
 ## Endpoint
 
 - `GET /` — health check.

@@ -6,7 +6,9 @@ import httpx
 from fastapi import FastAPI, Header, HTTPException, Request
 
 import config
+import database
 import gemini
+import memory
 import tools
 
 logging.basicConfig(
@@ -149,7 +151,11 @@ async def process_update(update_id: int, message: dict) -> None:
 
     reply = get_simple_reply(text)
     if reply is None:
-        reply = await gemini.generate_response(text)
+        reply = await gemini.generate_response(text, chat_id)
+    else:
+        # Simpan juga balasan cepat ke memory agar konteks tetap konsisten.
+        await memory.add_message(chat_id, "user", text=text)
+        await memory.add_message(chat_id, "model", text=reply)
 
     await send_message(chat_id, reply)
 
@@ -192,8 +198,9 @@ async def set_webhook() -> dict | None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Lifespan handler untuk setup webhook saat startup."""
+    """Lifespan handler untuk setup webhook dan database saat startup."""
     await set_webhook()
+    await database.init_db()
     yield
 
 

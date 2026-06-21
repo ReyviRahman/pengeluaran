@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+env/
+
+# Git
+.git/
+.gitignore
+
+# Environment & secrets
+.env
+.env.example
+*.env
+
+# Docker
+Dockerfile
+docker-compose*.yml
+.dockerignore
+
+# Test & cache
+.pytest_cache/
+tests/
+
+# Misc
+README.md
+*.md

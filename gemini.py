@@ -1,13 +1,62 @@
 import json
 import logging
+import traceback
 
 from google import genai
 from google.genai import types
 
 import config
+import memory
 import tools
 
 logger = logging.getLogger(__name__)
+
+
+def _build_fallback_reply(function_response_parts: list[types.Part]) -> str:
+    """Buat balasan sederhana dari hasil function response jika Gemini gagal generate final text."""
+    lines = []
+    for part in function_response_parts:
+        fr = part.function_response
+        if not fr:
+            continue
+
+        name = fr.name
+        response = fr.response
+
+        if not isinstance(response, dict):
+            lines.append(f"Hasil {name}: {response}")
+            continue
+
+        status = response.get("status", "unknown")
+        message = response.get("message", "")
+
+        if status != "success":
+            lines.append(f"Maaf, {message or 'terjadi kesalahan saat membaca data.'}")
+            continue
+
+        # Balasan untuk pengeluaran hari ini / tanggal tertentu.
+        summary = response.get("summary", {})
+        data = response.get("data", [])
+
+        if isinstance(data, list) and data:
+            total = summary.get("total_pengeluaran", 0)
+            lines.append(f"{message or 'Berikut detailnya:'}")
+            for item in data:
+                if isinstance(item, dict):
+                    tgl = item.get('Tgl', '')
+                    ket = item.get('Keterangan', '')
+                    pengeluaran = item.get('Pengeluaran', '')
+                    lines.append(f"- {tgl}: {ket} ({pengeluaran})")
+            if total:
+                lines.append(f"Total pengeluaran: Rp {total:,}".replace(",", "."))
+        elif isinstance(data, dict) and data:
+            lines.append(f"{message or 'Berikut detailnya:'}")
+            for key, value in data.items():
+                lines.append(f"- {key}: {value}")
+        else:
+            lines.append(message or "Data berhasil dibaca.")
+
+    return "\n".join(lines) if lines else "Maaf, saya tidak bisa membalas saat ini."
 
 
 def get_client():
@@ -38,11 +87,12 @@ def _build_gemini_tools() -> list[types.Tool]:
     return [types.Tool(function_declarations=declarations)]
 
 
-async def generate_response(prompt: str) -> str:
+async def generate_response(prompt: str, chat_id: int) -> str:
     """Mengirim prompt ke Gemini dan mengembalikan jawabannya.
 
-    Jika Gemini memanggil salah satu tool, fungsi tersebut dieksekusi dan
-    hasilnya dikirim kembali ke Gemini untuk menghasilkan respons akhir.
+    Riwayat percakapan untuk chat_id dibaca dari memory dan disertakan sebagai
+    konteks. Jika Gemini memanggil salah satu tool, fungsi tersebut dieksekusi
+    dan hasilnya dikirim kembali ke Gemini untuk menghasilkan respons akhir.
     """
     try:
         client = get_client()
@@ -65,9 +115,13 @@ async def generate_response(prompt: str) -> str:
             "Jangan pernah menebak tahun sendiri."
         )
 
+        # Simpan pesan user dan ambil riwayat percakapan.
+        await memory.add_message(chat_id, "user", text=prompt)
+        history = await memory.get_history(chat_id)
+
         response = client.models.generate_content(
             model=config.GEMINI_MODEL,
-            contents=prompt,
+            contents=history,
             config=types.GenerateContentConfig(
                 tools=gemini_tools,
                 system_instruction=system_instruction,
@@ -81,7 +135,12 @@ async def generate_response(prompt: str) -> str:
         function_calls = [part.function_call for part in parts if part.function_call]
 
         if not function_calls:
-            return response.text or "Maaf, saya tidak bisa membalas saat ini."
+            reply = response.text or "Maaf, saya tidak bisa membalas saat ini."
+            await memory.add_message(chat_id, "model", text=reply)
+            return reply
+
+        # Simpan pemanggilan fungsi dari model ke memory.
+        await memory.add_message(chat_id, "model", parts=parts)
 
         # Proses setiap function call.
         function_response_parts = []
@@ -104,17 +163,38 @@ async def generate_response(prompt: str) -> str:
                 )
             )
 
-        # Kirim hasil fungsi kembali ke Gemini untuk respons akhir.
-        final_response = client.models.generate_content(
-            model=config.GEMINI_MODEL,
-            contents=[
-                types.Content(role="user", parts=[types.Part.from_text(text=prompt)]),
-                candidate.content,
-                types.Content(role="user", parts=function_response_parts),
-            ],
-        )
+        # Simpan hasil tool ke memory dan ambil history terbaru.
+        await memory.add_message(chat_id, "tool", parts=function_response_parts)
+        history = await memory.get_history(chat_id)
 
-        return final_response.text or "Maaf, saya tidak bisa membalas saat ini."
+        # Kirim hasil fungsi kembali ke Gemini untuk respons akhir.
+        try:
+            final_response = client.models.generate_content(
+                model=config.GEMINI_MODEL,
+                contents=history,
+                config=types.GenerateContentConfig(
+                    tools=gemini_tools,
+                    system_instruction=system_instruction,
+                ),
+            )
+
+            if final_response.candidates and final_response.text:
+                reply = final_response.text
+            else:
+                logger.warning(
+                    "Gemini tidak mengembalikan teks final, fallback ke hasil tool."
+                )
+                reply = _build_fallback_reply(function_response_parts)
+        except Exception as final_exc:
+            logger.error(
+                "Gagal generate final response dari Gemini: %s", final_exc
+            )
+            logger.error("Traceback: %s", traceback.format_exc())
+            reply = _build_fallback_reply(function_response_parts)
+
+        await memory.add_message(chat_id, "model", text=reply)
+        return reply
     except Exception as exc:
         logger.error("Gagal menghasilkan respons dari Gemini: %s", exc)
+        logger.error("Traceback: %s", traceback.format_exc())
         return "Maaf, terjadi kesalahan saat memproses pesan kamu."
