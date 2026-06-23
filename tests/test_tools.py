@@ -65,6 +65,33 @@ def test_get_saldo_akhir():
     assert result["saldo_akhir"] == "Rp730.041"
 
 
+def test_get_expense_summary():
+    original_get_worksheet = tools._get_worksheet
+    original_get_sheet_values = tools._get_sheet_values
+
+    mock_worksheet = MagicMock()
+    mock_worksheet.acell.side_effect = lambda cell: {
+        "E2": MagicMock(value="Rp3.269.959"),
+        "F2": MagicMock(value="Rp730.041"),
+    }.get(cell)
+
+    tools._get_worksheet = lambda: mock_worksheet
+    tools._get_sheet_values = lambda: [
+        ["22/06/2026", "Makan Malam", "50000", "", "", ""],
+    ]
+
+    try:
+        result = tools.get_expense_summary()
+    finally:
+        tools._get_worksheet = original_get_worksheet
+        tools._get_sheet_values = original_get_sheet_values
+
+    assert result["status"] == "success"
+    assert result["data"]["total_pengeluaran"] == "Rp3.269.959"
+    assert result["data"]["saldo_akhir"] == "Rp730.041"
+    assert result["data"]["tanggal_terakhir"] == "22/06/2026"
+
+
 def test_parse_delete_input_with_date_description_and_amount():
     parsed = tools._parse_delete_input("hapus 16 juni es krim 5rb")
     assert parsed["date"] == "2026-06-16"

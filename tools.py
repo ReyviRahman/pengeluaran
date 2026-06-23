@@ -494,7 +494,9 @@ def get_current_date() -> dict[str, Any]:
 
 
 def get_expense_summary() -> dict[str, Any]:
-    """Ambil ringkasan dari baris terakhir: total pengeluaran dan saldo akhir."""
+    """Ambil ringkasan keuangan: tanggal terakhir dari baris terakhir,
+    total pengeluaran dari cell E2, dan saldo akhir dari cell F2.
+    """
     try:
         values = _get_sheet_values()
         if not values:
@@ -503,11 +505,25 @@ def get_expense_summary() -> dict[str, Any]:
         last_row = values[-1]
         summary = _row_to_dict(last_row)
 
+        total_result = get_total_pengeluaran()
+        saldo_result = get_saldo_akhir()
+
+        total_pengeluaran = (
+            total_result.get("total_pengeluaran", "")
+            if total_result.get("status") == "success"
+            else ""
+        )
+        saldo_akhir = (
+            saldo_result.get("saldo_akhir", "")
+            if saldo_result.get("status") == "success"
+            else ""
+        )
+
         return {
             "status": "success",
             "data": {
-                "total_pengeluaran": summary.get("Total Pengeluaran", ""),
-                "saldo_akhir": summary.get("Saldo Akhir", ""),
+                "total_pengeluaran": total_pengeluaran,
+                "saldo_akhir": saldo_akhir,
                 "tanggal_terakhir": summary.get("Tgl", ""),
             },
             "message": "Ringkasan keuangan dari data terakhir",
@@ -901,7 +917,8 @@ TOOL_DECLARATIONS = [
     {
         "name": "get_expense_summary",
         "description": (
-            "Ambil ringkasan keuangan dari baris terakhir: total pengeluaran dan saldo akhir. "
+            "Ambil ringkasan keuangan: total pengeluaran dari cell E2, "
+            "saldo akhir dari cell F2, dan tanggal terakhir dari baris terakhir. "
             "Gunakan jika user tanya 'ringkasan keuangan' atau ingin melihat total dan saldo sekaligus."
         ),
         "parameters": {
