@@ -4,6 +4,7 @@ import traceback
 from datetime import datetime
 from typing import Any
 import re
+from zoneinfo import ZoneInfo
 
 import gspread
 from gspread.exceptions import APIError, WorksheetNotFound
@@ -11,6 +12,15 @@ from gspread.exceptions import APIError, WorksheetNotFound
 import config
 
 HARI = ["Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu", "Minggu"]
+
+# Gunakan timezone Asia/Jakarta agar tanggal/hari ini konsisten meski server di UTC.
+TIMEZONE = ZoneInfo("Asia/Jakarta")
+
+
+def _now() -> datetime:
+    """Mengembalikan waktu sekarang dalam timezone Asia/Jakarta."""
+    return datetime.now(TIMEZONE)
+
 
 logger = logging.getLogger(__name__)
 
@@ -311,7 +321,7 @@ def _parse_date(date_str: str) -> str:
     for fmt in yearless_formats:
         try:
             parsed = datetime.strptime(date_str, fmt)
-            now = datetime.now()
+            now = _now()
             return parsed.replace(year=now.year).strftime("%Y-%m-%d")
         except ValueError:
             continue
@@ -461,7 +471,7 @@ def get_expenses_by_date(date_str: str) -> dict[str, Any]:
 
 def get_expenses_today() -> dict[str, Any]:
     """Cari pengeluaran untuk tanggal hari ini."""
-    today = datetime.now().strftime("%Y-%m-%d")
+    today = _now().strftime("%Y-%m-%d")
     return get_expenses_by_date(today)
 
 
@@ -470,22 +480,22 @@ def get_expenses_by_day_month(day: int, month: int) -> dict[str, Any]:
 
     Berguna ketika user menyebut tanggal tanpa tahun, misalnya '16 Juni'.
     """
-    year = datetime.now().year
+    year = _now().year
     date_str = f"{day:02d}/{month:02d}/{year}"
     return get_expenses_by_date(date_str)
 
 
 def get_current_date() -> dict[str, Any]:
-    """Mengembalikan tanggal dan hari sekarang berdasarkan server."""
+    """Mengembalikan tanggal dan hari sekarang berdasarkan Asia/Jakarta."""
     try:
-        now = datetime.now()
+        now = _now()
         return {
             "status": "success",
             "data": {
                 "date": now.strftime("%Y-%m-%d"),
                 "day": HARI[now.weekday()],
                 "time": now.strftime("%H:%M:%S"),
-                "timezone": "server local time",
+                "timezone": "Asia/Jakarta",
             },
             "message": "Tanggal sekarang",
         }
@@ -561,7 +571,7 @@ def _parse_expense_input(text: str) -> dict[str, Any]:
             break
 
     if not date_str:
-        date_str = datetime.now().strftime("%Y-%m-%d")
+        date_str = _now().strftime("%Y-%m-%d")
 
     description = " ".join(words[date_end_index:-1]).strip()
     if not description:

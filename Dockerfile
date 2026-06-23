@@ -1,5 +1,9 @@
 FROM python:3.14-slim
 
+# Set timezone agar OS-level time konsisten dengan aplikasi
+ENV TZ=Asia/Jakarta
+RUN apt-get update && apt-get install -y tzdata && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 # Install uv package manager

@@ -1,3 +1,5 @@
+import re
+from datetime import datetime, timezone
 from unittest.mock import MagicMock
 
 import tools
@@ -174,3 +176,24 @@ def test_find_matching_rows_ambiguous():
 
     matches = tools._find_matching_rows(values, "16 Juni 2026", None)
     assert len(matches) == 2
+
+
+def test_get_current_date_returns_asia_jakarta():
+    result = tools.get_current_date()
+    assert result["status"] == "success"
+    assert result["data"]["timezone"] == "Asia/Jakarta"
+    assert re.match(r"^\d{4}-\d{2}-\d{2}$", result["data"]["date"])
+    assert result["data"]["day"] in tools.HARI
+    assert re.match(r"^\d{2}:\d{2}:\d{2}$", result["data"]["time"])
+
+
+def test_parse_expense_input_default_date_uses_jakarta_time():
+    original_now = tools._now
+    try:
+        tools._now = lambda: datetime(2026, 6, 24, 1, 0, 0, tzinfo=tools.TIMEZONE)
+        parsed = tools._parse_expense_input("makan siang 50000")
+        assert parsed["date"] == "2026-06-24"
+        assert parsed["description"] == "makan siang"
+        assert parsed["amount"] == 50000
+    finally:
+        tools._now = original_now
