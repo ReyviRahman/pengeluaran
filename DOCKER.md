@@ -70,7 +70,7 @@ Perintah ini akan build image baru dari kode terbaru, lalu menjalankan ulang con
 
 ### Pilihan B: Mount Kode sebagai Volume (Lebih Cepat saat Development)
 
-Jika kamu sering mengubah kode, tambahkan volume di `docker-compose.yml` agar file di laptop langsung terlihat di container:
+Jika kamu sering mengubah kode, tambahkan volume di `docker-compose.yaml` agar file di laptop langsung terlihat di container:
 
 ```yaml
 services:
@@ -97,7 +97,7 @@ docker compose restart app
 
 ---
 
-## 4. Jika Ada Perubahan `Dockerfile` atau `docker-compose.yml`
+## 4. Jika Ada Perubahan `Dockerfile` atau `docker-compose.yaml`
 
 Kamu **harus rebuild** image agar perubahan diterapkan:
 
@@ -117,7 +117,7 @@ Contoh kasus yang wajib rebuild:
 - Mengubah isi `Dockerfile`.
 - Menambah atau mengubah dependency di `pyproject.toml` atau `requirements.txt`.
 - Mengubah `CMD` atau `EXPOSE` di `Dockerfile`.
-- Mengubah environment variable di `docker-compose.yml` yang bukan berasal dari `.env`.
+- Mengubah environment variable di `docker-compose.yaml` yang bukan berasal dari `.env`.
 
 ---
 
@@ -161,9 +161,9 @@ docker compose restart app
 
 ## 7. Tips Penting
 
-- Jangan lupa `credentials.json` harus selalu ada di root project, karena `docker-compose.yml` memasangnya sebagai volume.
+- Jangan lupa `credentials.json` harus selalu ada di root project, karena `docker-compose.yaml` memasangnya sebagai volume.
 - `WEBHOOK_URL` di `.env` harus URL publik yang bisa dijangkau Telegram. Kalau hanya `localhost`, webhook dari Telegram tidak akan sampai.
-- Kalau ingin mengganti port aplikasi di laptop (misalnya dari `8000` ke `8080`), ubah bagian `ports` di `docker-compose.yml`:
+- Kalau ingin mengganti port aplikasi di laptop (misalnya dari `8000` ke `8080`), ubah bagian `ports` di `docker-compose.yaml`:
 
   ```yaml
   ports:
@@ -171,7 +171,7 @@ docker compose restart app
   ```
 
   Lalu rebuild: `docker compose up -d --build`.
-- `DATABASE_URL` di dalam container akan di-override otomatis oleh `docker-compose.yml` untuk mengarah ke service `db`, jadi kamu tidak perlu mengubahnya di `.env`.
+- `DATABASE_URL` di dalam container akan di-override otomatis oleh `docker-compose.yaml` untuk mengarah ke service `db`, jadi kamu tidak perlu mengubahnya di `.env`.
 
 ---
 
@@ -192,7 +192,7 @@ Database PostgreSQL yang berjalan di Docker sudah di-expose ke port `5432` di la
    - **Password**: `belajarai`
 5. Klik **Save**.
 
-> Catatan: username, password, dan nama database mengikuti nilai default di `docker-compose.yml` dan `.env.example`. Jika kamu mengubahnya di `.env`, sesuaikan saja.
+> Catatan: username, password, dan nama database mengikuti nilai default di `docker-compose.yaml` dan `.env.example`. Jika kamu mengubahnya di `.env`, sesuaikan saja.
 
 ### Jika pgAdmin4 Juga Berjalan di Docker
 
@@ -200,7 +200,7 @@ Jika pgAdmin4 kamu jalankan lewat Docker container, `localhost` tidak akan berfu
 
 #### Cara 1: Gunakan Nama Service `db`
 
-Pastikan pgAdmin4 berada dalam network yang sama dengan project ini. Jika kamu menjalankan pgAdmin4 di file `docker-compose.yml` yang sama, gunakan:
+Pastikan pgAdmin4 berada dalam network yang sama dengan project ini. Jika kamu menjalankan pgAdmin4 di file `docker-compose.yaml` yang sama, gunakan:
 
 - **Host name/address**: `db`
 
@@ -212,7 +212,7 @@ Jika pgAdmin4 berada di container terpisah tetapi di laptop yang sama, gunakan:
 
 ### Jika Port 5432 Sudah Dipakai PostgreSQL Lain
 
-Jika di laptopmu sudah ada PostgreSQL lain yang menggunakan port `5432`, ubah port mapping di `docker-compose.yml`, misalnya ke `5433`:
+Jika di laptopmu sudah ada PostgreSQL lain yang menggunakan port `5432`, ubah port mapping di `docker-compose.yaml`, misalnya ke `5433`:
 
 ```yaml
 ports:
@@ -247,7 +247,7 @@ Biasanya disebabkan oleh:
 
 ### Port 8000 sudah digunakan
 
-Ubah port mapping di `docker-compose.yml`, misalnya:
+Ubah port mapping di `docker-compose.yaml`, misalnya:
 
 ```yaml
 ports:

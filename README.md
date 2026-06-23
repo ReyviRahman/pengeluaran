@@ -66,7 +66,7 @@ Pada saat startup, aplikasi akan otomatis mendaftarkan webhook ke Telegram.
 
 ## Menjalankan dengan Docker
 
-Project ini sudah menyertakan `Dockerfile` dan `docker-compose.yml` yang menjalankan aplikasi beserta database PostgreSQL.
+Project ini sudah menyertakan `Dockerfile` dan `docker-compose.yaml` yang menjalankan aplikasi beserta database PostgreSQL.
 
 1. Pastikan Docker dan Docker Compose sudah terinstall.
 

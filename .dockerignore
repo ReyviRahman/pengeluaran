@@ -20,7 +20,7 @@ env/
 
 # Docker
 Dockerfile
-docker-compose*.yml
+docker-compose*.yaml
 .dockerignore
 
 # Test & cache
