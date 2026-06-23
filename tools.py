@@ -141,6 +141,66 @@ def check_sheet_connection() -> dict[str, Any]:
         }
 
 
+def get_cell_e2() -> dict[str, Any]:
+    """Baca nilai cell E2 dari Google Sheet yang dikonfigurasi."""
+    try:
+        worksheet = _get_worksheet()
+        value = worksheet.acell("E2").value
+        return {
+            "status": "success",
+            "cell": "E2",
+            "value": value,
+            "spreadsheet_id": config.SPREADSHEET_ID,
+            "sheet_name": config.SHEET_NAME,
+        }
+    except Exception as exc:
+        return _format_error(exc, "Gagal membaca cell E2")
+
+
+def get_cell_f2() -> dict[str, Any]:
+    """Baca nilai cell F2 (saldo akhir) dari Google Sheet yang dikonfigurasi."""
+    try:
+        worksheet = _get_worksheet()
+        value = worksheet.acell("F2").value
+        return {
+            "status": "success",
+            "cell": "F2",
+            "value": value,
+            "spreadsheet_id": config.SPREADSHEET_ID,
+            "sheet_name": config.SHEET_NAME,
+        }
+    except Exception as exc:
+        return _format_error(exc, "Gagal membaca cell F2")
+
+
+def get_total_pengeluaran() -> dict[str, Any]:
+    """Baca total pengeluaran dari cell E2 Google Sheet."""
+    try:
+        worksheet = _get_worksheet()
+        value = worksheet.acell("E2").value
+        return {
+            "status": "success",
+            "total_pengeluaran": value,
+            "message": f"Total pengeluaran saat ini adalah {value}",
+        }
+    except Exception as exc:
+        return _format_error(exc, "Gagal membaca total pengeluaran")
+
+
+def get_saldo_akhir() -> dict[str, Any]:
+    """Baca saldo akhir dari cell F2 Google Sheet."""
+    try:
+        worksheet = _get_worksheet()
+        value = worksheet.acell("F2").value
+        return {
+            "status": "success",
+            "saldo_akhir": value,
+            "message": f"Saldo akhir kamu saat ini adalah {value}",
+        }
+    except Exception as exc:
+        return _format_error(exc, "Gagal membaca saldo akhir")
+
+
 # Mapping nama bulan Indonesia ke bahasa Inggris untuk parsing tanggal.
 _BULAN_ID_TO_EN = {
     "januari": "January",
@@ -813,11 +873,36 @@ TOOL_DECLARATIONS = [
         },
     },
     {
+        "name": "get_total_pengeluaran",
+        "description": (
+            "Ambil total pengeluaran dari cell E2 Google Sheet. "
+            "WAJIB dipanggil ketika user bertanya 'total pengeluaran berapa', "
+            "'berapa total pengeluaran ku', atau pertanyaan serupa. "
+            "Jangan pernah mengarang jawaban tanpa membaca data sheet terlebih dahulu."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+    {
+        "name": "get_saldo_akhir",
+        "description": (
+            "Ambil saldo akhir dari cell F2 Google Sheet. "
+            "WAJIB dipanggil ketika user bertanya 'saldo akhir berapa', 'sisa saldo ku berapa', "
+            "'berapa saldo akhir ku', atau pertanyaan serupa. "
+            "Jangan pernah mengarang jawaban tanpa membaca data sheet terlebih dahulu."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+    {
         "name": "get_expense_summary",
         "description": (
-            "Ambil ringkasan keuangan: total pengeluaran dan saldo akhir dari baris terakhir. "
-            "Gunakan jika user tanya 'total pengeluaran berapa', 'sisa saldo', 'saldo akhir', "
-            "atau 'ringkasan keuangan'."
+            "Ambil ringkasan keuangan dari baris terakhir: total pengeluaran dan saldo akhir. "
+            "Gunakan jika user tanya 'ringkasan keuangan' atau ingin melihat total dan saldo sekaligus."
         ),
         "parameters": {
             "type": "object",
@@ -847,6 +932,8 @@ TOOL_FUNCTIONS = {
     "get_expenses_by_date": get_expenses_by_date,
     "get_expenses_by_day_month": get_expenses_by_day_month,
     "get_expenses_today": get_expenses_today,
+    "get_total_pengeluaran": get_total_pengeluaran,
+    "get_saldo_akhir": get_saldo_akhir,
     "get_expense_summary": get_expense_summary,
     "get_current_date": get_current_date,
 }

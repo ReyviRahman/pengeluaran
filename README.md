@@ -111,6 +111,7 @@ Project ini sudah menyertakan `Dockerfile` dan `docker-compose.yml` yang menjala
 ## Endpoint
 
 - `GET /` — health check.
+- `GET /check-sheet` — memeriksa koneksi ke Google Sheet.
 - `POST /webhook` — menerima update dari Telegram.
 
 ## Uji Coba

@@ -1,4 +1,68 @@
+from unittest.mock import MagicMock
+
 import tools
+
+
+def test_get_cell_e2():
+    mock_worksheet = MagicMock()
+    mock_worksheet.acell.return_value.value = "150000"
+
+    original_get_worksheet = tools._get_worksheet
+    tools._get_worksheet = lambda: mock_worksheet
+    try:
+        result = tools.get_cell_e2()
+    finally:
+        tools._get_worksheet = original_get_worksheet
+
+    assert result["status"] == "success"
+    assert result["cell"] == "E2"
+    assert result["value"] == "150000"
+
+
+def test_get_cell_f2():
+    mock_worksheet = MagicMock()
+    mock_worksheet.acell.return_value.value = "Rp1.000.000"
+
+    original_get_worksheet = tools._get_worksheet
+    tools._get_worksheet = lambda: mock_worksheet
+    try:
+        result = tools.get_cell_f2()
+    finally:
+        tools._get_worksheet = original_get_worksheet
+
+    assert result["status"] == "success"
+    assert result["cell"] == "F2"
+    assert result["value"] == "Rp1.000.000"
+
+
+def test_get_total_pengeluaran():
+    mock_worksheet = MagicMock()
+    mock_worksheet.acell.return_value.value = "Rp3.269.959"
+
+    original_get_worksheet = tools._get_worksheet
+    tools._get_worksheet = lambda: mock_worksheet
+    try:
+        result = tools.get_total_pengeluaran()
+    finally:
+        tools._get_worksheet = original_get_worksheet
+
+    assert result["status"] == "success"
+    assert result["total_pengeluaran"] == "Rp3.269.959"
+
+
+def test_get_saldo_akhir():
+    mock_worksheet = MagicMock()
+    mock_worksheet.acell.return_value.value = "Rp730.041"
+
+    original_get_worksheet = tools._get_worksheet
+    tools._get_worksheet = lambda: mock_worksheet
+    try:
+        result = tools.get_saldo_akhir()
+    finally:
+        tools._get_worksheet = original_get_worksheet
+
+    assert result["status"] == "success"
+    assert result["saldo_akhir"] == "Rp730.041"
 
 
 def test_parse_delete_input_with_date_description_and_amount():
