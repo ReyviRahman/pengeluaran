@@ -107,6 +107,16 @@ async def generate_response(prompt: str, chat_id: int) -> str:
             "'bayar parkir 10k', '16 Juni Makan Es Krim 20rb', atau 'beli pulsa 50.000', "
             "panggil insert_expense dengan seluruh pesan user sebagai parameter text. "
             "Jangan pernah memanggil insert_expense jika user tidak menyebutkan keterangan atau nominal. "
+            "Jika user ingin menghapus pengeluaran terakhir, misalnya 'hapus pengeluaran terakhir', "
+            "'batalkan input terakhir', atau 'salah input, hapus yang terakhir', panggil delete_last_expense. "
+            "Jika user ingin menghapus pengeluaran tertentu, "
+            "misalnya 'hapus pengeluaran makan siang tadi', 'hapus data tanggal 16/06/2026', "
+            "'hapus 16 juni es krim 5rb', atau 'hapus es krim 5k', "
+            "panggil delete_expense dengan seluruh pesan user sebagai parameter text. "
+            "Tool tersebut akan mengekstrak tanggal, keterangan, dan nominal sendiri. "
+            "Jika user bertanya tentang total pengeluaran, saldo akhir, atau ringkasan keuangan, "
+            "misalnya 'total pengeluaran berapa', 'sisa saldo', atau 'ringkasan keuangan', "
+            "panggil get_expense_summary. "
             "Jika user bertanya tentang tanggal hari ini, panggil get_current_date. "
             "Jika user bertanya 'pengeluaran hari ini', panggil get_expenses_today. "
             "Jika user bertanya pengeluaran tanggal tertentu dengan tahun lengkap, panggil get_expenses_by_date. "
@@ -127,6 +137,18 @@ async def generate_response(prompt: str, chat_id: int) -> str:
                 system_instruction=system_instruction,
             ),
         )
+
+        # Tangani respons kosong atau tanpa candidates.
+        if not response.candidates:
+            logger.warning(
+                "Gemini mengembalikan respons awal tanpa candidates (prompt=%r).",
+                prompt,
+            )
+            reply = (
+                "Baik, Reyyy. Kalau ada yang mau dicatat atau dicek, bilang aja ya."
+            )
+            await memory.add_message(chat_id, "model", text=reply)
+            return reply
 
         candidate = response.candidates[0]
         parts = candidate.content.parts

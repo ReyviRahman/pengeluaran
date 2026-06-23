@@ -271,6 +271,47 @@ def _row_to_dict(row: list[str]) -> dict[str, Any]:
     }
 
 
+def _find_matching_rows(
+    values: list[list[str]],
+    date_str: str | None,
+    description: str | None,
+) -> list[tuple[int, list[str]]]:
+    """Cari baris yang cocok dengan tanggal dan/atau keterangan.
+
+    Mengembalikan list tuple (sheet_row_index, row_values).
+    sheet_row_index adalah nomor baris di Google Sheet (header di baris 1).
+    """
+    matches: list[tuple[int, list[str]]] = []
+
+    normalized_date = _parse_date(date_str) if date_str else ""
+    normalized_desc = description.lower().strip() if description else ""
+
+    for idx, row in enumerate(values, start=2):  # data mulai baris 2
+        if not row:
+            continue
+
+        raw_date = row[0] if len(row) > 0 else ""
+        raw_desc = row[1] if len(row) > 1 else ""
+
+        date_match = False
+        if normalized_date:
+            parsed_row_date = _parse_date(raw_date)
+            date_match = parsed_row_date == normalized_date
+        else:
+            date_match = True  # tidak difilter tanggal
+
+        desc_match = False
+        if normalized_desc:
+            desc_match = normalized_desc in raw_desc.lower()
+        else:
+            desc_match = True  # tidak difilter keterangan
+
+        if date_match and desc_match:
+            matches.append((idx, row))
+
+    return matches
+
+
 def get_all_expenses() -> dict[str, Any]:
     """Baca semua data pengeluaran dari sheet."""
     try:
@@ -374,6 +415,24 @@ def get_expenses_by_day_month(day: int, month: int) -> dict[str, Any]:
     return get_expenses_by_date(date_str)
 
 
+def get_current_date() -> dict[str, Any]:
+    """Mengembalikan tanggal dan hari sekarang berdasarkan server."""
+    try:
+        now = datetime.now()
+        return {
+            "status": "success",
+            "data": {
+                "date": now.strftime("%Y-%m-%d"),
+                "day": HARI[now.weekday()],
+                "time": now.strftime("%H:%M:%S"),
+                "timezone": "server local time",
+            },
+            "message": "Tanggal sekarang",
+        }
+    except Exception as exc:
+        return _format_error(exc, "Gagal mendapatkan tanggal sekarang")
+
+
 def get_expense_summary() -> dict[str, Any]:
     """Ambil ringkasan dari baris terakhir: total pengeluaran dan saldo akhir."""
     try:
@@ -395,24 +454,6 @@ def get_expense_summary() -> dict[str, Any]:
         }
     except Exception as exc:
         return _format_error(exc, "Gagal membaca ringkasan")
-
-
-def get_current_date() -> dict[str, Any]:
-    """Mengembalikan tanggal dan hari sekarang berdasarkan server."""
-    try:
-        now = datetime.now()
-        return {
-            "status": "success",
-            "data": {
-                "date": now.strftime("%Y-%m-%d"),
-                "day": HARI[now.weekday()],
-                "time": now.strftime("%H:%M:%S"),
-                "timezone": "server local time",
-            },
-            "message": "Tanggal sekarang",
-        }
-    except Exception as exc:
-        return _format_error(exc, "Gagal mendapatkan tanggal sekarang")
 
 
 def _parse_expense_input(text: str) -> dict[str, Any]:
@@ -457,6 +498,58 @@ def _parse_expense_input(text: str) -> dict[str, Any]:
     }
 
 
+def _parse_delete_input(text: str) -> dict[str, Any]:
+    """Parse input penghapusan dari user menjadi tanggal, keterangan, dan nominal opsional.
+
+    Format yang didukung:
+    - "hapus es krim 5k"
+    - "hapus 16 juni es krim 5rb"
+    - "batalkan 16/06/2026 makan siang"
+
+    Nominal diakhir tidak wajib; jika ada, akan diabaikan untuk pencarian.
+    """
+    words = text.strip().split()
+    if not words:
+        return {"error": "Input tidak boleh kosong."}
+
+    # Abaikan kata kunci perintah di awal kalimat.
+    command_words = {"hapus", "delete", "batalkan", "cancel", "hilangkan"}
+    while words and words[0].lower().strip(",.!?") in command_words:
+        words.pop(0)
+
+    if not words:
+        return {"error": "Berikan tanggal atau keterangan pengeluaran yang ingin dihapus."}
+
+    # Nominal di akhir bersifat opsional untuk penghapusan.
+    end_index = len(words)
+    amount = _parse_amount(words[-1])
+    if amount > 0:
+        end_index = len(words) - 1
+
+    # Coba parse tanggal di awal kalimat, dari kandidat terpanjang ke terpendek.
+    max_date_words = min(4, end_index - 1)
+    date_str = ""
+    date_end_index = 0
+    for i in range(max_date_words, 0, -1):
+        candidate = " ".join(words[:i])
+        parsed = _parse_date(candidate)
+        if re.match(r"^\d{4}-\d{2}-\d{2}$", parsed):
+            date_str = parsed
+            date_end_index = i
+            break
+
+    description = " ".join(words[date_end_index:end_index]).strip()
+
+    if not date_str and not description:
+        return {"error": "Berikan tanggal atau keterangan pengeluaran yang ingin dihapus."}
+
+    return {
+        "date": date_str,
+        "description": description,
+        "amount": amount,
+    }
+
+
 def insert_expense(text: str) -> dict[str, Any]:
     """Catat pengeluaran baru ke Google Sheet (hanya kolom A, B, C)."""
     try:
@@ -492,6 +585,91 @@ def insert_expense(text: str) -> dict[str, Any]:
         return _format_error(exc, "Gagal mencatat pengeluaran")
 
 
+def delete_last_expense() -> dict[str, Any]:
+    """Hapus baris pengeluaran paling akhir di Google Sheet."""
+    try:
+        worksheet = _get_worksheet()
+        values = _get_sheet_values()
+
+        if not values:
+            return {
+                "status": "error",
+                "message": "Tidak ada pengeluaran yang bisa dihapus. Sheet masih kosong.",
+            }
+
+        last_row_index = len(values) + 1  # header di baris 1
+        last_row = values[-1]
+        worksheet.delete_rows(last_row_index)
+
+        deleted = _row_to_dict(last_row)
+        return {
+            "status": "success",
+            "message": (
+                f"Berhasil menghapus pengeluaran terakhir: "
+                f"{deleted.get('Tgl', '')} - {deleted.get('Keterangan', '')} "
+                f"({deleted.get('Pengeluaran', '')})"
+            ),
+            "data": deleted,
+        }
+    except Exception as exc:
+        return _format_error(exc, "Gagal menghapus pengeluaran terakhir")
+
+
+def delete_expense(text: str) -> dict[str, Any]:
+    """Hapus pengeluaran berdasarkan seluruh pesan user.
+
+    Pesan akan di-parse untuk mengekstrak tanggal, keterangan, dan nominal opsional.
+    Hanya menghapus jika ditemukan tepat 1 baris yang cocok.
+    Jika 0 atau >1 baris cocok, kembalikan error tanpa menghapus.
+    """
+    try:
+        parsed = _parse_delete_input(text)
+        if "error" in parsed:
+            return {"status": "error", "message": parsed["error"]}
+
+        worksheet = _get_worksheet()
+        values = _get_sheet_values()
+
+        if not values:
+            return {
+                "status": "error",
+                "message": "Tidak ada pengeluaran yang bisa dihapus. Sheet masih kosong.",
+            }
+
+        matches = _find_matching_rows(values, parsed.get("date"), parsed.get("description"))
+
+        if len(matches) == 0:
+            return {
+                "status": "error",
+                "message": "Tidak ditemukan pengeluaran yang cocok dengan kriteria tersebut.",
+            }
+
+        if len(matches) > 1:
+            return {
+                "status": "error",
+                "message": (
+                    f"Ditemukan {len(matches)} pengeluaran yang cocok. "
+                    "Mohon perjelas tanggal atau keterangannya agar saya bisa menghapus yang tepat."
+                ),
+            }
+
+        sheet_row_index, row = matches[0]
+        worksheet.delete_rows(sheet_row_index)
+
+        deleted = _row_to_dict(row)
+        return {
+            "status": "success",
+            "message": (
+                f"Berhasil menghapus pengeluaran: "
+                f"{deleted.get('Tgl', '')} - {deleted.get('Keterangan', '')} "
+                f"({deleted.get('Pengeluaran', '')})"
+            ),
+            "data": deleted,
+        }
+    except Exception as exc:
+        return _format_error(exc, "Gagal menghapus pengeluaran")
+
+
 # -----------------------------------------------------------------------------
 # FUNCTION DECLARATIONS untuk Gemini (mengikuti pola tools-contoh.py)
 # -----------------------------------------------------------------------------
@@ -513,6 +691,42 @@ TOOL_DECLARATIONS = [
                     "type": "string",
                     "description": "Seluruh pesan user yang berisi keterangan dan nominal pengeluaran, contoh: 'makan siang 50rb'",
                 }
+            },
+            "required": ["text"],
+        },
+    },
+    {
+        "name": "delete_last_expense",
+        "description": (
+            "Hapus pengeluaran paling akhir yang tercatat di Google Sheet. "
+            "WAJIB dipanggil ketika user ingin membatalkan atau menghapus input terakhir, "
+            "misalnya 'hapus pengeluaran terakhir', 'batalkan input terakhir', 'salah input, hapus yang terakhir'. "
+            "Jangan panggil tool ini jika user ingin menghapus data lama atau berdasarkan keterangan."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+    {
+        "name": "delete_expense",
+        "description": (
+            "Hapus pengeluaran tertentu di Google Sheet berdasarkan seluruh pesan user. "
+            "WAJIB dipanggil ketika user ingin menghapus pengeluaran spesifik, "
+            "misalnya 'hapus pengeluaran makan siang tadi', 'hapus data tanggal 16/06/2026', "
+            "'hapus 16 juni es krim 5rb', atau 'hapus es krim 5k'. "
+            "Kirim seluruh pesan user sebagai parameter text; tool akan mengekstrak tanggal, "
+            "keterangan, dan nominal sendiri. Nominal di akhir tidak wajib. "
+            "Tool ini hanya akan menghapus jika ditemukan tepat 1 data yang cocok; "
+            "jika tidak ditemukan atau ada banyak yang cocok, bot akan meminta klarifikasi."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "text": {
+                    "type": "string",
+                    "description": "Seluruh pesan user yang ingin menghapus pengeluaran, contoh: 'hapus 16 juni es krim 5rb'",
+                },
             },
             "required": ["text"],
         },
@@ -602,7 +816,8 @@ TOOL_DECLARATIONS = [
         "name": "get_expense_summary",
         "description": (
             "Ambil ringkasan keuangan: total pengeluaran dan saldo akhir dari baris terakhir. "
-            "Gunakan jika user tanya 'total pengeluaran berapa', 'sisa saldo', atau 'saldo akhir'."
+            "Gunakan jika user tanya 'total pengeluaran berapa', 'sisa saldo', 'saldo akhir', "
+            "atau 'ringkasan keuangan'."
         ),
         "parameters": {
             "type": "object",
@@ -625,6 +840,8 @@ TOOL_DECLARATIONS = [
 
 TOOL_FUNCTIONS = {
     "insert_expense": insert_expense,
+    "delete_last_expense": delete_last_expense,
+    "delete_expense": delete_expense,
     "get_all_expenses": get_all_expenses,
     "get_recent_expenses": get_recent_expenses,
     "get_expenses_by_date": get_expenses_by_date,

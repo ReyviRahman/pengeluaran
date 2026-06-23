@@ -131,10 +131,15 @@ Setelah setup Google Sheets selesai, kamu bisa bertanya seperti ini ke bot:
 - "Lihat pengeluaran terbaru"
 - "10 pengeluaran terakhir saya apa saja?"
 - "Total pengeluaran dan saldo akhir saya berapa?"
+- "Ringkasan keuangan saya"
 - "Ada pengeluaran tanggal 15 Juni 2026 apa saja?"
 - "Pengeluaran tanggal 16 Juni"
 - "Tanggal berapa hari ini?"
 - "Ringkasan keuangan saya"
+- "Hapus pengeluaran terakhir"
+- "Batalkan input terakhir"
+- "Hapus pengeluaran makan siang tadi"
+- "Hapus data tanggal 16/06/2026"
 
 ## Catatan Keamanan
 
