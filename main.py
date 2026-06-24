@@ -153,9 +153,10 @@ async def process_update(update_id: int, message: dict) -> None:
     if reply is None:
         reply = await gemini.generate_response(text, chat_id)
     else:
-        # Simpan juga balasan cepat ke memory agar konteks tetap konsisten.
-        await memory.add_message(chat_id, "user", text=text)
-        await memory.add_message(chat_id, "model", text=reply)
+        # Balasan cepat untuk sapaan/ucapan santai sengaja tidak disimpan ke
+        # memory, agar user tidak dipaksa menjawab sapaan sebelum bisa
+        # bertanya data keuangan.
+        pass
 
     await send_message(chat_id, reply)
 
