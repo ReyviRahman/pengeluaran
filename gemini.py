@@ -61,6 +61,103 @@ def _build_fallback_reply(function_response_parts: list[types.Part]) -> str:
     return "\n".join(lines) if lines else "Maaf, saya tidak bisa membalas saat ini."
 
 
+def _sanitize_history(history: list[types.Content]) -> list[types.Content]:
+    """Validasi dan perbaiki urutan peran dalam riwayat untuk Gemini function calling.
+
+    Aturan yang dijaga:
+    - Peran user dan model harus selalu bergantian.
+    - model:function_call harus diikuti user:function_response.
+    - user:function_response harus didahului model:function_call.
+    - Ronde function calling yang tidak lengkap di akhir history dihapus.
+    - Pesan user biasa yang berurutan digabungkan.
+    """
+
+    def _is_function_call(content: types.Content) -> bool:
+        return content.role == "model" and any(
+            part.function_call for part in content.parts
+        )
+
+    def _is_function_response(content: types.Content) -> bool:
+        return content.role == "user" and any(
+            part.function_response for part in content.parts
+        )
+
+    sanitized: list[types.Content] = []
+
+    for content in history:
+        if _is_function_call(content):
+            # function_call hanya valid jika didahului oleh user turn.
+            if sanitized and sanitized[-1].role != "user":
+                continue
+            sanitized.append(content)
+        elif _is_function_response(content):
+            # function_response hanya valid jika didahului model:function_call.
+            if not sanitized or sanitized[-1].role != "model" or not _is_function_call(
+                sanitized[-1]
+            ):
+                continue
+            sanitized.append(content)
+        else:
+            # Pesan user/model biasa.
+            if not sanitized:
+                if content.role == "user":
+                    sanitized.append(content)
+                continue
+
+            if content.role == "user":
+                if sanitized[-1].role == "model":
+                    # Jika model sebelumnya adalah function_call, pesan user biasa
+                    # tidak bisa langsung mengikutinya; hapus function_call-nya.
+                    if _is_function_call(sanitized[-1]):
+                        sanitized.pop()
+                    sanitized.append(content)
+                else:
+                    # Dua user turn berurutan. Jika sebelumnya function_response,
+                    # ronde function calling belum selesai (tidak ada balasan model).
+                    # Hapus ronde tersebut lalu simpan pesan user terbaru.
+                    if _is_function_response(sanitized[-1]):
+                        while sanitized and sanitized[-1].role == "user":
+                            sanitized.pop()
+                        if sanitized and _is_function_call(sanitized[-1]):
+                            sanitized.pop()
+                    sanitized.append(content)
+            elif content.role == "model":
+                if sanitized[-1].role == "user":
+                    sanitized.append(content)
+                else:
+                    # Dua model turn berurutan: pertahankan yang terbaru.
+                    sanitized.pop()
+                    sanitized.append(content)
+
+    # Hapus ronde function calling yang tidak lengkap di akhir history.
+    while sanitized:
+        last = sanitized[-1]
+        if _is_function_call(last):
+            sanitized.pop()
+        elif _is_function_response(last):
+            sanitized.pop()
+            if sanitized and _is_function_call(sanitized[-1]):
+                sanitized.pop()
+        else:
+            break
+
+    # Gabungkan user turn biasa yang berurutan.
+    merged: list[types.Content] = []
+    for content in sanitized:
+        if content.role == "user" and not _is_function_response(content):
+            if (
+                merged
+                and merged[-1].role == "user"
+                and not _is_function_response(merged[-1])
+            ):
+                merged_parts = list(merged[-1].parts) + list(content.parts)
+                merged[-1] = types.Content(role="user", parts=merged_parts)
+                continue
+        merged.append(content)
+
+    return merged
+
+
 def get_client():
     if not config.GEMINI_API_KEY:
         raise ValueError("GEMINI_API_KEY belum diatur di file .env")
@@ -116,7 +213,7 @@ async def generate_response(prompt: str, chat_id: int) -> str:
 
         # Simpan pesan user dan ambil riwayat percakapan.
         await memory.add_message(chat_id, "user", text=prompt)
-        history = await memory.get_history(chat_id)
+        history = _sanitize_history(await memory.get_history(chat_id))
 
         function_response_parts: list[types.Part] = []
 
@@ -178,7 +275,7 @@ async def generate_response(prompt: str, chat_id: int) -> str:
 
             # Simpan hasil tool ke memory dan ambil history terbaru.
             await memory.add_message(chat_id, "tool", parts=function_response_parts)
-            history = await memory.get_history(chat_id)
+            history = _sanitize_history(await memory.get_history(chat_id))
 
         # Loop habis tanpa jawaban text -> jangan biarkan user digantung.
         logger.warning(
