@@ -14,6 +14,35 @@ logger = logging.getLogger(__name__)
 MAX_TOOL_ITERATIONS = 5
 
 
+def _content_to_dict(content: types.Content) -> dict:
+    """Serialisasi Content untuk logging/debugging."""
+    parts = []
+    for part in content.parts:
+        if part.text:
+            parts.append({"text": part.text})
+        elif part.function_call:
+            parts.append(
+                {
+                    "function_call": {
+                        "name": part.function_call.name,
+                        "args": dict(part.function_call.args) if part.function_call.args else {},
+                    }
+                }
+            )
+        elif part.function_response:
+            parts.append(
+                {
+                    "function_response": {
+                        "name": part.function_response.name,
+                        "response": part.function_response.response,
+                    }
+                }
+            )
+        else:
+            parts.append({"unknown": True})
+    return {"role": content.role, "parts": parts}
+
+
 def _build_fallback_reply(function_response_parts: list[types.Part]) -> str:
     """Buat balasan sederhana dari hasil function response jika Gemini gagal generate final text."""
     lines = []
@@ -213,11 +242,22 @@ async def generate_response(prompt: str, chat_id: int) -> str:
 
         # Simpan pesan user dan ambil riwayat percakapan.
         await memory.add_message(chat_id, "user", text=prompt)
-        history = _sanitize_history(await memory.get_history(chat_id))
+        raw_history = await memory.get_history(chat_id)
+        logger.info(
+            "Raw history dari database (chat_id=%s): %s",
+            chat_id,
+            json.dumps([_content_to_dict(c) for c in raw_history], ensure_ascii=False),
+        )
+        history = _sanitize_history(raw_history)
 
         function_response_parts: list[types.Part] = []
 
         for _ in range(MAX_TOOL_ITERATIONS):
+            logger.info(
+                "Mengirim history ke Gemini (chat_id=%s): %s",
+                chat_id,
+                json.dumps([_content_to_dict(c) for c in history], ensure_ascii=False),
+            )
             response = client.models.generate_content(
                 model=config.GEMINI_MODEL,
                 contents=history,
