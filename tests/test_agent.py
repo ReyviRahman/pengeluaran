@@ -9,10 +9,10 @@ def _make_text_response(text: str):
     part = SimpleNamespace(text=text)
     content = SimpleNamespace(parts=[part])
     candidate = SimpleNamespace(content=content)
-    return SimpleNamespace(candidates=[candidate], text=text)
+    return SimpleNamespace(candidates=[candidate], text=text, function_calls=[])
 
 
-def test_generate_response_returns_text():
+def test_run_agent_returns_text():
     """Prompt sederhana harus dijawab dengan teks dari Gemini."""
     mock_client = MagicMock()
     mock_client.models.generate_content.return_value = _make_text_response(
@@ -20,18 +20,18 @@ def test_generate_response_returns_text():
     )
 
     with patch("agent.get_client", return_value=mock_client):
-        reply = agent.generate_response("halo")
+        reply, _ = agent.run_agent([], "halo")
 
     assert reply == "Halo! Ada yang bisa saya bantu?"
     mock_client.models.generate_content.assert_called_once()
 
 
-def test_generate_response_returns_fallback_on_empty_text():
+def test_run_agent_returns_fallback_on_empty_text():
     """Jika Gemini mengembalikan teks kosong, fungsi harus mengembalikan fallback."""
     mock_client = MagicMock()
     mock_client.models.generate_content.return_value = _make_text_response("")
 
     with patch("agent.get_client", return_value=mock_client):
-        reply = agent.generate_response("halo")
+        reply, _ = agent.run_agent([], "halo")
 
-    assert reply == "Maaf, saya tidak bisa membalas saat ini."
+    assert reply == agent.FALLBACK_MESSAGE

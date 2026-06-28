@@ -78,7 +78,7 @@ async def process_update(update_id: int, message: dict) -> None:
     if not chat_id or not text:
         return
 
-    reply = agent.generate_response(text)
+    reply, _ = agent.run_agent([], text)
     await send_message(chat_id, reply)
 
 

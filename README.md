@@ -1,6 +1,6 @@
 # Belajar AI Telegram Bot
 
-Project ini menerima pesan masuk dari Telegram Bot menggunakan webhook, lalu membalasnya menggunakan Google Gemini. Versi ini adalah versi paling dasar: tidak ada database, tidak ada Google Sheets, dan tidak ada tools. Hanya user dan AI yang saling berinteraksi.
+Project ini menerima pesan masuk dari Telegram Bot menggunakan webhook, lalu membalasnya menggunakan Google Gemini. 
 
 ## Persiapan
 
