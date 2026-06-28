@@ -1,18 +1,14 @@
 [project]
-name = "belajar-ai"
+name = "ai-pengeluaran"
 version = "0.1.0"
-description = "Add your description here"
+description = "Bot Telegram sederhana dengan AI Gemini"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
-    "asyncpg>=0.29.0",
     "fastapi>=0.115.0",
     "google-genai>=1.0.0",
-    "gspread>=6.0.0",
     "httpx>=0.28.0",
     "python-dotenv>=1.0.0",
-    "sqlmodel>=0.0.22",
-    "tzdata>=2026.2",
     "uvicorn>=0.32.0",
 ]
 
