@@ -1,6 +1,6 @@
 # Belajar AI Telegram Bot
 
-Project ini menerima pesan masuk dari Telegram Bot menggunakan webhook, lalu membalasnya menggunakan Google Gemini. 
+Project ini menerima pesan masuk dari Telegram Bot menggunakan webhook, lalu membalasnya menggunakan OpenAI (ChatGPT). 
 
 ## Persiapan
 
@@ -16,16 +16,16 @@ Project ini menerima pesan masuk dari Telegram Bot menggunakan webhook, lalu mem
    TELEGRAM_BOT_TOKEN=token_dari_botfather
    WEBHOOK_URL=https://domain-anda.com
    WEBHOOK_SECRET=secret_acak_untuk_webhook
-   GEMINI_API_KEY=api_key_dari_google_ai_studio
-   GEMINI_MODEL=gemini-1.5-flash
+   OPENAI_API_KEY=api_key_dari_openai
+   OPENAI_MODEL=gpt-4o-mini
    GOOGLE_SHEET_ID=id_dari_google_sheet
    ```
 
    - `TELEGRAM_BOT_TOKEN`: token yang diberikan BotFather.
    - `WEBHOOK_URL`: URL publik aplikasi ini. **Jangan tambahkan `/webhook`** di akhir, karena kode akan menambahkannya otomatis.
    - `WEBHOOK_SECRET`: string acak untuk memvalidasi request dari Telegram (opsional tapi direkomendasikan).
-   - `GEMINI_API_KEY`: API key dari [Google AI Studio](https://aistudio.google.com/app/apikey).
-   - `GEMINI_MODEL`: model Gemini yang digunakan, default `gemini-1.5-flash`.
+   - `OPENAI_API_KEY`: API key dari [OpenAI Platform](https://platform.openai.com/api-keys).
+   - `OPENAI_MODEL`: model OpenAI yang digunakan, default `gpt-4o-mini`.
    - `GOOGLE_SHEET_ID`: ID spreadsheet Google Sheets yang berisi data pengeluaran.
 
 ## Konfigurasi Google Sheets

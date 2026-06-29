@@ -1,16 +1,16 @@
 [project]
 name = "ai-pengeluaran"
 version = "0.1.0"
-description = "Bot Telegram sederhana dengan AI Gemini"
+description = "Bot Telegram sederhana dengan OpenAI (ChatGPT)"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
     "fastapi>=0.115.0",
-    "google-genai>=1.0.0",
     "httpx>=0.28.0",
     "python-dotenv>=1.0.0",
     "uvicorn>=0.32.0",
     "gspread>=6.0.0",
+    "openai>=2.44.0",
 ]
 
 [dependency-groups]

@@ -1,31 +1,28 @@
+import base64
+import json
 import logging
 from datetime import datetime
 from pathlib import Path
 
-from google import genai
-from google.genai import types
+from openai import OpenAI
 
 import config
 from tools import TOOL_DECLARATIONS, TOOL_FUNCTIONS
 
 logger = logging.getLogger(__name__)
 
-# Client disimpan sebagai singleton. google-genai SDK memiliki underlying httpx
-# session yang akan ditutup saat Client di-garbage-collect; membuat client baru
-# tiap request sering menyebabkan error "Cannot send a request, as the client
-# has been closed" (googleapis/python-genai#1763).
-_client: genai.Client | None = None
+# Client disimpan sebagai singleton.
+_client: OpenAI | None = None
 
 
-def get_client() -> genai.Client:
+def get_client() -> OpenAI:
     global _client
     if _client is None:
-        if not config.GEMINI_API_KEY:
-            raise ValueError("GEMINI_API_KEY belum diatur di file .env")
-        _client = genai.Client(api_key=config.GEMINI_API_KEY)
+        if not config.OPENAI_API_KEY:
+            raise ValueError("OPENAI_API_KEY belum diatur di file .env")
+        _client = OpenAI(api_key=config.OPENAI_API_KEY)
     return _client
 
-THINKING_LEVEL = "minimal"  # minimal = cepat & murah
 
 HARI = ["Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu", "Minggu"]
 BULAN = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli",
@@ -33,9 +30,9 @@ BULAN = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli",
 MAX_TOOL_ITERATIONS = 5
 FALLBACK_MESSAGE = ("Mohon maaf kak, Telegram kami sedang ada sedikit kendala🙏")
 
+
 def render_system_prompt() -> str:
-    """Baca prompts/system.md dan isi template variables.
-    """
+    """Baca prompts/system.md dan isi template variables."""
     raw = (Path(__file__).parent / "prompts" / "system.md").read_text(encoding="utf-8")
 
     replacements = {
@@ -49,30 +46,46 @@ def render_system_prompt() -> str:
         raw = raw.replace(key, value)
     return raw
 
+
 SYSTEM_PROMPT = render_system_prompt()
 
-GENERATE_CONFIG = types.GenerateContentConfig(
-    system_instruction=SYSTEM_PROMPT,
-    tools=[types.Tool(function_declarations=TOOL_DECLARATIONS)],
-    thinking_config=types.ThinkingConfig(thinking_level=THINKING_LEVEL),
-    temperature=0.7,
-)
+OPENAI_TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": tool["name"],
+            "description": tool["description"],
+            "parameters": tool["parameters"],
+        },
+    }
+    for tool in TOOL_DECLARATIONS
+]
+
+
+def _build_user_content(user_message: str, images: list[tuple[bytes, str]] | None = None) -> list[dict]:
+    """Bangun konten pesan user dalam format OpenAI, termasuk gambar base64."""
+    content = [{"type": "text", "text": user_message}]
+    for img_bytes, mime in (images or []):
+        b64 = base64.b64encode(img_bytes).decode("utf-8")
+        content.append({
+            "type": "image_url",
+            "image_url": {"url": f"data:{mime};base64,{b64}"},
+        })
+    return content
+
 
 def run_agent(history: list, user_message: str,
             images: list[tuple[bytes, str]] | None = None) -> tuple[str, list]:
-    """Jalankan satu giliran percakapan.
+    """Jalankan satu giliran percakapan dengan OpenAI.
 
     Args:
-        history: list of types.Content dari giliran-giliran sebelumnya
-        user_message: pesan user terbaru (sudah digabung buffer kalau dari WA)
-        images: daftar (bytes, mime) gambar dari customer untuk dibaca Gemini
+        history: daftar pesan OpenAI dari giliran-giliran sebelumnya (opsional).
+        user_message: pesan user terbaru.
+        images: daftar (bytes, mime) gambar dari customer.
 
     Returns:
-        (jawaban_text, history_baru) -- history_baru sudah termasuk giliran ini,
-        siap disimpan oleh memory.py.
+        (jawaban_text, history_baru)
     """
-    # Konteks waktu di-inject sebagai konteks pesan, BUKAN ke system prompt,
-    # supaya system prompt tetap statis (cache-friendly).
     now = datetime.now()
     date_ctx = (f"Hari ini {HARI[now.weekday()]}, {now.day} {BULAN[now.month - 1]} {now.year} "
                 f"({now:%Y-%m-%d}), pukul {now:%H:%M}")
@@ -80,49 +93,56 @@ def run_agent(history: list, user_message: str,
     if not user_message:
         user_message = "(customer mengirim gambar tanpa teks)"
 
-    parts = [types.Part(text=f"[Konteks: {date_ctx}]\n{user_message}")]
-    for img_bytes, mime in (images or []):
-        parts.append(types.Part.from_bytes(data=img_bytes, mime_type=mime))
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+    ]
+    if history:
+        messages.extend(history)
 
-    contents = list(history)
-    contents.append(types.Content(role="user", parts=parts))
+    messages.append({
+        "role": "user",
+        "content": _build_user_content(f"[Konteks: {date_ctx}]\n{user_message}", images),
+    })
 
     try:
         for _ in range(MAX_TOOL_ITERATIONS):
-            response = get_client().models.generate_content(
-                model=config.GEMINI_MODEL,
-                contents=contents,
-                config=GENERATE_CONFIG,
+            response = get_client().chat.completions.create(
+                model=config.OPENAI_MODEL,
+                messages=messages,
+                tools=OPENAI_TOOLS,
+                tool_choice="auto",
+                temperature=0.7,
             )
 
-            candidate = response.candidates[0]
-            contents.append(candidate.content)  # simpan giliran model (text/function call)
+            choice = response.choices[0]
+            message = choice.message
+            messages.append(message)
 
-            function_calls = response.function_calls or []
-            if not function_calls:
-                # Tidak ada tool call -> ini jawaban final
-                return (response.text or FALLBACK_MESSAGE), contents
+            tool_calls = message.tool_calls
+            if not tool_calls:
+                return (message.content or FALLBACK_MESSAGE), messages
 
-            # Eksekusi SEMUA function call di giliran ini, balikan hasilnya
-            result_parts = []
-            for fc in function_calls:
-                print(f"  [tool] {fc.name}({dict(fc.args)})")  # log untuk demo workshop
-                func = TOOL_FUNCTIONS.get(fc.name)
+            tool_messages = []
+            for tc in tool_calls:
+                print(f"  [tool] {tc.function.name}({tc.function.arguments})")
+                func = TOOL_FUNCTIONS.get(tc.function.name)
                 if func is None:
-                    result = {"error": f"Tool '{fc.name}' tidak dikenal."}
+                    result = {"error": f"Tool '{tc.function.name}' tidak dikenal."}
                 else:
                     try:
-                        result = func(**dict(fc.args))
-                    except Exception as e:  # tool gagal != agent mati
+                        args = json.loads(tc.function.arguments) if tc.function.arguments else {}
+                        result = func(**args)
+                    except Exception as e:
                         result = {"error": f"Tool gagal: {e}"}
-                result_parts.append(types.Part.from_function_response(
-                    name=fc.name, response={"result": result},
-                ))
-            contents.append(types.Content(role="user", parts=result_parts))
+                tool_messages.append({
+                    "role": "tool",
+                    "tool_call_id": tc.id,
+                    "content": json.dumps({"result": result}, ensure_ascii=False),
+                })
+            messages.extend(tool_messages)
 
-        # Loop habis tanpa jawaban text -> jangan biarkan customer digantung
-        return FALLBACK_MESSAGE, contents
+        return FALLBACK_MESSAGE, messages
 
     except Exception:
-        logger.exception("Gagal memanggil Gemini API")
-        return FALLBACK_MESSAGE, contents
+        logger.exception("Gagal memanggil OpenAI API")
+        return FALLBACK_MESSAGE, messages

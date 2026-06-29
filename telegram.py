@@ -85,7 +85,7 @@ async def send_chat_action(chat_id: int, action: str) -> None:
 
 
 async def process_update(update_id: int, message: dict) -> None:
-    """Mencatat pesan dan mengirim balasan melalui Gemini."""
+    """Mencatat pesan dan mengirim balasan melalui OpenAI."""
     log_message(update_id, message)
 
     chat_id = message.get("chat", {}).get("id")
