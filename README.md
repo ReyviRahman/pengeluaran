@@ -18,6 +18,7 @@ Project ini menerima pesan masuk dari Telegram Bot menggunakan webhook, lalu mem
    WEBHOOK_SECRET=secret_acak_untuk_webhook
    GEMINI_API_KEY=api_key_dari_google_ai_studio
    GEMINI_MODEL=gemini-1.5-flash
+   GOOGLE_SHEET_ID=id_dari_google_sheet
    ```
 
    - `TELEGRAM_BOT_TOKEN`: token yang diberikan BotFather.
@@ -25,6 +26,22 @@ Project ini menerima pesan masuk dari Telegram Bot menggunakan webhook, lalu mem
    - `WEBHOOK_SECRET`: string acak untuk memvalidasi request dari Telegram (opsional tapi direkomendasikan).
    - `GEMINI_API_KEY`: API key dari [Google AI Studio](https://aistudio.google.com/app/apikey).
    - `GEMINI_MODEL`: model Gemini yang digunakan, default `gemini-1.5-flash`.
+   - `GOOGLE_SHEET_ID`: ID spreadsheet Google Sheets yang berisi data pengeluaran.
+
+## Konfigurasi Google Sheets
+
+1. Pastikan file `credentials.json` untuk service account sudah berada di root proyek. File ini sudah di-ignore Git, jangan di-commit.
+
+2. Buka file `credentials.json` dan catat nilai `client_email`.
+
+3. Di Google Sheets, bagikan spreadsheet ke email service account tersebut dengan peran **Viewer** (atau **Editor**).
+
+4. Pastikan spreadsheet memiliki kolom berikut di baris pertama:
+
+   | Tgl | Keterangan | Pengeluaran |
+   |-----|------------|-------------|
+
+   Kolom `Tgl` bisa menggunakan format `YYYY-MM-DD`, `DD/MM/YYYY`, atau format Indonesia seperti `29 Juni 2026`.
 
 ## Menjalankan Aplikasi
 
