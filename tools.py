@@ -9,7 +9,7 @@ import config
 
 logger = logging.getLogger(__name__)
 
-SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
+SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 
 BULAN_ID = {
     "januari": 1,
@@ -159,7 +159,119 @@ def get_expenses(filter_date: Optional[str] = None, keyword: Optional[str] = Non
     }
 
 
+def add_expense(keterangan: str, jumlah: float, tanggal: Optional[str] = None) -> dict:
+    """Tambahkan satu baris pengeluaran ke Google Sheets.
+
+    Args:
+        keterangan: nama atau keterangan pengeluaran.
+        jumlah: nominal pengeluaran dalam bentuk angka (contoh: 8000).
+        tanggal: tanggal dalam format YYYY-MM-DD. Jika kosong, gunakan tanggal hari ini.
+    """
+    if not config.GOOGLE_SHEET_ID:
+        return {"error": "GOOGLE_SHEET_ID belum diatur di file .env"}
+
+    if not keterangan or not str(keterangan).strip():
+        return {"error": "Keterangan pengeluaran tidak boleh kosong"}
+
+    try:
+        jumlah = float(jumlah)
+        if jumlah <= 0:
+            return {"error": "Jumlah pengeluaran harus lebih besar dari 0"}
+    except (ValueError, TypeError):
+        return {"error": f"Jumlah pengeluaran tidak valid: {jumlah!r}"}
+
+    if not tanggal:
+        tanggal = datetime.now().date().isoformat()
+
+    try:
+        sheet = _get_sheet()
+        headers = sheet.row_values(1)
+    except Exception as exc:
+        logger.exception("Gagal membuka Google Sheets")
+        return {"error": f"Gagal membuka spreadsheet: {exc}"}
+
+    col_tgl = _find_column(headers, "Tgl", "Tanggal", "Date", "Tgl.")
+    col_keterangan = _find_column(headers, "Keterangan", "Ket", "Deskripsi", "Detail")
+    col_pengeluaran = _find_column(headers, "Pengeluaran", "Jumlah", "Nominal", "Harga", "Total", "Biaya")
+
+    if not all([col_tgl, col_keterangan, col_pengeluaran]):
+        logger.error("Kolom tidak lengkap. Header: %s", headers)
+        return {"error": f"Kolom Tgl/Keterangan/Pengeluaran tidak ditemukan. Header: {headers}"}
+
+    try:
+        # Pastikan urutan kolom sesuai header
+        row = ["", "", ""]
+        for idx, header in enumerate(headers):
+            if header.strip().lower() == col_tgl.strip().lower():
+                row[idx] = tanggal
+            elif header.strip().lower() == col_keterangan.strip().lower():
+                row[idx] = str(keterangan).strip()
+            elif header.strip().lower() == col_pengeluaran.strip().lower():
+                row[idx] = jumlah
+        sheet.append_row(row, value_input_option="USER_ENTERED")
+    except Exception as exc:
+        logger.exception("Gagal menulis ke Google Sheets")
+        return {"error": f"Gagal menambahkan pengeluaran: {exc}"}
+
+    return {
+        "success": True,
+        "message": f"Pengeluaran '{keterangan}' sebesar Rp{jumlah:,.0f} pada {tanggal} berhasil dicatat.",
+        "data": {
+            "Tgl": tanggal,
+            "Keterangan": keterangan,
+            "Pengeluaran": jumlah,
+        },
+    }
+
+
+def get_balance() -> dict:
+    """Baca nilai saldo akhir dari cell F2 di Google Sheets."""
+    if not config.GOOGLE_SHEET_ID:
+        return {"error": "GOOGLE_SHEET_ID belum diatur di file .env"}
+
+    try:
+        sheet = _get_sheet()
+        value = sheet.acell("F2").value
+    except Exception as exc:
+        logger.exception("Gagal membaca saldo akhir dari Google Sheets")
+        return {"error": f"Gagal membaca saldo akhir: {exc}"}
+
+    return {
+        "saldo_akhir": value,
+        "cell": "F2",
+    }
+
+
 TOOL_DECLARATIONS = [
+    {
+        "name": "add_expense",
+        "description": (
+            "Tambahkan pengeluaran baru ke Google Sheets. "
+            "Gunakan saat user menyebutkan pembelian atau pengeluaran, contohnya: "
+            "'es krim 8k', 'bensin 50k', 'makan siang 25 ribu 30 juni'. "
+            "Konversi singkatan seperti 8k menjadi 8000 sebelum memanggil tool. "
+            "Jika user menyebut tanggal, konversi ke format YYYY-MM-DD; "
+            "jika tidak, gunakan tanggal hari ini dari konteks waktu."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "keterangan": {
+                    "type": "string",
+                    "description": "Nama atau keterangan pengeluaran.",
+                },
+                "jumlah": {
+                    "type": "number",
+                    "description": "Nominal pengeluaran dalam angka, contoh 8000.",
+                },
+                "tanggal": {
+                    "type": "string",
+                    "description": "Tanggal dalam format YYYY-MM-DD. Opsional, default hari ini.",
+                },
+            },
+            "required": ["keterangan", "jumlah"],
+        },
+    },
     {
         "name": "get_expenses",
         "description": (
@@ -186,9 +298,25 @@ TOOL_DECLARATIONS = [
             "required": [],
         },
     },
+    {
+        "name": "get_balance",
+        "description": (
+            "Gunakan tool ini ketika user bertanya tentang saldo akhir, sisa saldo, "
+            "atau saldo terakhir. Membaca nilai dari cell F2 di spreadsheet. "
+            "Contoh: 'saldo akhir berapa?', 'sisa saldo saya berapa?', 'saldo terakhir'. "
+            "Jangan menebak; selalu panggil tool ini untuk pertanyaan tentang saldo."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
+    },
 ]
 
 
 TOOL_FUNCTIONS = {
+    "add_expense": add_expense,
     "get_expenses": get_expenses,
+    "get_balance": get_balance,
 }

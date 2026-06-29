@@ -34,7 +34,7 @@ Project ini menerima pesan masuk dari Telegram Bot menggunakan webhook, lalu mem
 
 2. Buka file `credentials.json` dan catat nilai `client_email`.
 
-3. Di Google Sheets, bagikan spreadsheet ke email service account tersebut dengan peran **Viewer** (atau **Editor**).
+3. Di Google Sheets, bagikan spreadsheet ke email service account tersebut dengan peran **Editor**. Bot perlu izin menulis untuk mencatat pengeluaran baru.
 
 4. Pastikan spreadsheet memiliki kolom berikut di baris pertama:
 
@@ -42,6 +42,26 @@ Project ini menerima pesan masuk dari Telegram Bot menggunakan webhook, lalu mem
    |-----|------------|-------------|
 
    Kolom `Tgl` bisa menggunakan format `YYYY-MM-DD`, `DD/MM/YYYY`, atau format Indonesia seperti `29 Juni 2026`.
+
+## Fitur Chat
+
+Bot ini bisa membaca dan menulis data pengeluaran melalui chat Telegram.
+
+### Mencatat pengeluaran baru
+
+Kirim pesan seperti:
+
+- `es krim 8k` → mencatat pengeluaran "es krim" sebesar 8000 untuk hari ini.
+- `bensin 50k` → mencatat "bensin" sebesar 50000 untuk hari ini.
+- `es krim 10k 30 juni` → mencatat "es krim" sebesar 10000 untuk tanggal 30 Juni tahun berjalan.
+
+Bot akan menyimpan data ke kolom `Tgl`, `Keterangan`, dan `Pengeluaran` di Google Sheets.
+
+### Menanyakan pengeluaran
+
+- `pengeluaran hari ini berapa?`
+- `total pengeluaran minggu ini`
+- `daftar pengeluaran untuk makanan`
 
 ## Menjalankan Aplikasi
 

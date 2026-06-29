@@ -68,6 +68,22 @@ async def send_message(chat_id: int, text: str) -> None:
         logger.error("Error saat kirim pesan ke Telegram: %s", exc)
 
 
+async def send_chat_action(chat_id: int, action: str) -> None:
+    """Mengirim status typing/typing indicator ke Telegram."""
+    url = f"{TELEGRAM_API_BASE}/sendChatAction"
+    payload = {
+        "chat_id": chat_id,
+        "action": action,
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(url, json=payload)
+            response.raise_for_status()
+    except Exception as exc:
+        logger.error("Error saat kirim chat action ke Telegram: %s", exc)
+
+
 async def process_update(update_id: int, message: dict) -> None:
     """Mencatat pesan dan mengirim balasan melalui Gemini."""
     log_message(update_id, message)
@@ -78,6 +94,7 @@ async def process_update(update_id: int, message: dict) -> None:
     if not chat_id or not text:
         return
 
+    await send_chat_action(chat_id, "typing")
     reply, _ = agent.run_agent([], text)
     await send_message(chat_id, reply)
 

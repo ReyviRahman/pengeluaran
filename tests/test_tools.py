@@ -106,3 +106,60 @@ def test_get_expenses_kolom_tidak_ditemukan():
 
     assert "error" in result
     assert "Pengeluaran" in result["error"]
+
+
+def _make_sheet_with_append(headers: list[str]):
+    """Buat mock worksheet dengan row_values dan append_row untuk add_expense."""
+    sheet = MagicMock()
+    sheet.row_values.return_value = headers
+    sheet.append_row = MagicMock()
+    return sheet
+
+
+def test_add_expense_hari_ini():
+    sheet = _make_sheet_with_append(["Tgl", "Keterangan", "Pengeluaran"])
+
+    with patch("tools._get_sheet", return_value=sheet):
+        result = tools.add_expense(keterangan="es krim", jumlah=8000)
+
+    assert result["success"] is True
+    assert "es krim" in result["message"]
+    assert "8,000" in result["message"]
+    sheet.append_row.assert_called_once()
+    appended = sheet.append_row.call_args[0][0]
+    assert appended[1] == "es krim"
+    assert appended[2] == 8000
+    assert sheet.append_row.call_args.kwargs.get("value_input_option") == "USER_ENTERED"
+
+
+def test_add_expense_dengan_tanggal():
+    sheet = _make_sheet_with_append(["Tgl", "Keterangan", "Pengeluaran"])
+
+    with patch("tools._get_sheet", return_value=sheet):
+        result = tools.add_expense(keterangan="es krim", jumlah=10000, tanggal="2026-06-30")
+
+    assert result["success"] is True
+    appended = sheet.append_row.call_args[0][0]
+    assert appended[0] == "2026-06-30"
+    assert appended[1] == "es krim"
+    assert appended[2] == 10000
+
+
+def test_add_expense_kolom_tidak_ditemukan():
+    sheet = _make_sheet_with_append(["Tgl", "Keterangan", "Amount"])
+
+    with patch("tools._get_sheet", return_value=sheet):
+        result = tools.add_expense(keterangan="es krim", jumlah=8000)
+
+    assert "error" in result
+    assert "Tgl/Keterangan/Pengeluaran" in result["error"]
+
+
+def test_add_expense_jumlah_tidak_valid():
+    sheet = _make_sheet_with_append(["Tgl", "Keterangan", "Pengeluaran"])
+
+    with patch("tools._get_sheet", return_value=sheet):
+        result = tools.add_expense(keterangan="es krim", jumlah="gratis")
+
+    assert "error" in result
+    assert "Jumlah" in result["error"]
