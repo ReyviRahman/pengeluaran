@@ -1,7 +1,7 @@
 import logging
 from datetime import datetime
 from typing import Optional
-
+import os
 import gspread
 from google.oauth2.service_account import Credentials
 
@@ -29,7 +29,13 @@ BULAN_ID = {
 
 def _get_sheet():
     """Ambil worksheet pertama dari Google Sheet yang dikonfigurasi."""
-    creds = Credentials.from_service_account_file("credentials.json", scopes=SCOPES)
+    credentials_path = os.getenv("GOOGLE_SHEETS_CREDENTIALS_PATH", "/app/credentials.json")
+
+    creds = Credentials.from_service_account_file(
+        credentials_path,
+        scopes=SCOPES,
+    )
+
     client = gspread.authorize(creds)
     return client.open_by_key(config.GOOGLE_SHEET_ID).sheet1
 
