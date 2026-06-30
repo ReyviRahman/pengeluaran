@@ -163,3 +163,166 @@ def test_add_expense_jumlah_tidak_valid():
 
     assert "error" in result
     assert "Jumlah" in result["error"]
+
+
+def test_get_expense_summary_mengelompokkan_per_tanggal():
+    rows = [
+        {"Tgl": "2026-06-01", "Keterangan": "Nasi", "Pengeluaran": 15000},
+        {"Tgl": "2026-06-01", "Keterangan": "Bensin", "Pengeluaran": 50000},
+        {"Tgl": "2026-06-02", "Keterangan": "Kopi", "Pengeluaran": 20000},
+    ]
+
+    sheet = MagicMock()
+    sheet.get_all_records.return_value = rows
+
+    with patch("tools._get_sheet", return_value=sheet):
+        result = tools.get_expense_summary()
+
+    assert result["count"] == 2
+    assert result["items"][0]["Tgl"] == "2026-06-01"
+    assert result["items"][0]["Total"] == 65000.0
+    assert result["items"][1]["Tgl"] == "2026-06-02"
+    assert result["items"][1]["Total"] == 20000.0
+
+
+def test_get_expense_summary_format_ribuan_indonesia():
+    rows = [
+        {"Tgl": "2026-06-01", "Keterangan": "Belanja", "Pengeluaran": "1.005.500"},
+        {"Tgl": "2026-06-02", "Keterangan": "Makan", "Pengeluaran": "500.000"},
+    ]
+
+    sheet = MagicMock()
+    sheet.get_all_records.return_value = rows
+
+    with patch("tools._get_sheet", return_value=sheet):
+        result = tools.get_expense_summary()
+
+    assert result["count"] == 2
+    assert result["items"][0]["Tgl"] == "2026-06-01"
+    assert result["items"][0]["Total"] == 1005500.0
+    assert result["items"][1]["Total"] == 500000.0
+
+
+def test_get_expense_summary_spreadsheet_kosong():
+    sheet = MagicMock()
+    sheet.get_all_records.return_value = []
+
+    with patch("tools._get_sheet", return_value=sheet):
+        result = tools.get_expense_summary()
+
+    assert result["count"] == 0
+    assert result["items"] == []
+
+
+def _make_sheet_for_delete(headers: list[str], rows: list[list]):
+    """Buat mock worksheet dengan get_all_values dan delete_rows untuk delete_expense."""
+    sheet = MagicMock()
+    sheet.get_all_values.return_value = [headers] + rows
+    sheet.delete_rows = MagicMock()
+    return sheet
+
+
+def test_delete_expense_berhasil_satu_cocokan():
+    sheet = _make_sheet_for_delete(
+        ["Tgl", "Keterangan", "Pengeluaran"],
+        [
+            ["2026-06-29", "Nasi Orak Arik", "15000"],
+            ["2026-06-28", "Makan Kfc", "50000"],
+        ],
+    )
+
+    with patch("tools._get_sheet", return_value=sheet):
+        result = tools.delete_expense(keyword="kfc", jumlah=50000)
+
+    assert result["success"] is True
+    assert "Makan Kfc" in result["message"]
+    sheet.delete_rows.assert_called_once_with(3)
+
+
+def test_delete_expense_tidak_ada_cocokan():
+    sheet = _make_sheet_for_delete(
+        ["Tgl", "Keterangan", "Pengeluaran"],
+        [
+            ["2026-06-29", "Nasi Orak Arik", "15000"],
+        ],
+    )
+
+    with patch("tools._get_sheet", return_value=sheet):
+        result = tools.delete_expense(keyword="bensin")
+
+    assert "error" in result
+    sheet.delete_rows.assert_not_called()
+
+
+def test_delete_expense_banyak_cocokan():
+    sheet = _make_sheet_for_delete(
+        ["Tgl", "Keterangan", "Pengeluaran"],
+        [
+            ["2026-06-29", "Makan Siang", "15000"],
+            ["2026-06-28", "Makan Malam", "25000"],
+        ],
+    )
+
+    with patch("tools._get_sheet", return_value=sheet):
+        result = tools.delete_expense(keyword="makan")
+
+    assert "error" in result
+    assert "matches" in result
+    assert len(result["matches"]) == 2
+    sheet.delete_rows.assert_not_called()
+
+
+def test_delete_expense_kriteria_tidak_diberikan():
+    sheet = _make_sheet_for_delete(
+        ["Tgl", "Keterangan", "Pengeluaran"],
+        [["2026-06-29", "Nasi Orak Arik", "15000"]],
+    )
+
+    with patch("tools._get_sheet", return_value=sheet):
+        result = tools.delete_expense()
+
+    assert "error" in result
+    sheet.delete_rows.assert_not_called()
+
+
+def test_delete_expense_kolom_tidak_ditemukan():
+    sheet = _make_sheet_for_delete(
+        ["Tgl", "Keterangan", "Amount"],
+        [["2026-06-29", "Nasi Orak Arik", "15000"]],
+    )
+
+    with patch("tools._get_sheet", return_value=sheet):
+        result = tools.delete_expense(keyword="nasi")
+
+    assert "error" in result
+    assert "Tgl/Keterangan/Pengeluaran" in result["error"]
+    sheet.delete_rows.assert_not_called()
+
+
+def _make_sheet_for_cell(cell: str, value: str):
+    """Buat mock worksheet dengan acell untuk membaca satu cell."""
+    sheet = MagicMock()
+    sheet.acell.return_value = MagicMock(value=value)
+    return sheet
+
+
+def test_get_total_expenses_berhasil():
+    sheet = _make_sheet_for_cell("E2", "Rp 1.500.000")
+
+    with patch("tools._get_sheet", return_value=sheet):
+        result = tools.get_total_expenses()
+
+    assert result["total_pengeluaran"] == "Rp 1.500.000"
+    assert result["cell"] == "E2"
+    sheet.acell.assert_called_once_with("E2")
+
+
+def test_get_balance_berhasil():
+    sheet = _make_sheet_for_cell("F2", "Rp 5.000.000")
+
+    with patch("tools._get_sheet", return_value=sheet):
+        result = tools.get_balance()
+
+    assert result["saldo_akhir"] == "Rp 5.000.000"
+    assert result["cell"] == "F2"
+    sheet.acell.assert_called_once_with("F2")

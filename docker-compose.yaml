@@ -5,4 +5,8 @@ services:
     restart: unless-stopped
     env_file: .env
     ports:
-      - "8002:8000"
+      - "8000"
+    volumes:
+      - ${CREDENTIALS_FILE:-./credentials.json}:/app/credentials.json:ro
+volumes:
+  postgres_data:

@@ -242,6 +242,178 @@ def get_balance() -> dict:
     }
 
 
+def get_total_expenses() -> dict:
+    """Baca nilai total pengeluaran dari cell E2 di Google Sheets."""
+    if not config.GOOGLE_SHEET_ID:
+        return {"error": "GOOGLE_SHEET_ID belum diatur di file .env"}
+
+    try:
+        sheet = _get_sheet()
+        value = sheet.acell("E2").value
+    except Exception as exc:
+        logger.exception("Gagal membaca total pengeluaran dari Google Sheets")
+        return {"error": f"Gagal membaca total pengeluaran: {exc}"}
+
+    return {
+        "total_pengeluaran": value,
+        "cell": "E2",
+    }
+
+
+def get_expense_summary() -> dict:
+    """Hitung total pengeluaran per tanggal dari Google Sheets.
+
+    Mengembalikan daftar tanggal dengan total pengeluaran, diurutkan dari
+    total tertinggi ke terendah. Berguna untuk menjawab pertanyaan seperti
+    "pengeluaran paling banyak di tanggal berapa?" atau "paling sedikit".
+    """
+    if not config.GOOGLE_SHEET_ID:
+        return {"error": "GOOGLE_SHEET_ID belum diatur di file .env"}
+
+    try:
+        sheet = _get_sheet()
+        records = sheet.get_all_records()
+    except Exception as exc:
+        logger.exception("Gagal membaca Google Sheets")
+        return {"error": f"Gagal membaca spreadsheet: {exc}"}
+
+    if not records:
+        return {"count": 0, "items": []}
+
+    headers = list(records[0].keys())
+
+    col_tgl = _find_column(headers, "Tgl", "Tanggal", "Date", "Tgl.")
+    col_pengeluaran = _find_column(headers, "Pengeluaran", "Jumlah", "Nominal", "Harga", "Total", "Biaya")
+
+    if not col_pengeluaran:
+        logger.error("Kolom Pengeluaran tidak ditemukan. Header: %s", headers)
+        return {"error": f"Kolom Pengeluaran tidak ditemukan. Header terbaca: {headers}"}
+
+    totals: dict[str, float] = {}
+    for row in records:
+        tgl_raw = str(row.get(col_tgl, "")).strip() if col_tgl else ""
+        tgl = _parse_date_flexible(tgl_raw) or tgl_raw
+        pengeluaran = _normalize_pengeluaran(row.get(col_pengeluaran))
+        totals[tgl] = totals.get(tgl, 0.0) + pengeluaran
+
+    items = sorted(
+        [{"Tgl": tgl, "Total": total} for tgl, total in totals.items()],
+        key=lambda x: x["Total"],
+        reverse=True,
+    )
+
+    return {
+        "count": len(items),
+        "items": items,
+    }
+
+
+def delete_expense(filter_date: Optional[str] = None, keyword: Optional[str] = None,
+                   jumlah: Optional[float] = None) -> dict:
+    """Hapus satu baris pengeluaran dari Google Sheets berdasarkan kriteria.
+
+    Hanya menghapus jika ditemukan tepat satu baris yang cocok. Jika tidak ada
+    atau ada lebih dari satu cocokan, kembalikan informasi agar user bisa
+    memberikan kriteria lebih spesifik.
+
+    Args:
+        filter_date: tanggal dalam format YYYY-MM-DD atau format umum Indonesia.
+        keyword: kata kunci yang harus ada di kolom Keterangan (case-insensitive).
+        jumlah: nominal pengeluaran dalam angka.
+    """
+    if not config.GOOGLE_SHEET_ID:
+        return {"error": "GOOGLE_SHEET_ID belum diatur di file .env"}
+
+    # Normalisasi input kosong menjadi None
+    filter_date = filter_date.strip() if filter_date else None
+    keyword = keyword.strip().lower() if keyword else None
+    jumlah = _normalize_pengeluaran(jumlah) if jumlah is not None else None
+
+    if not filter_date and not keyword and jumlah is None:
+        return {"error": "Berikan setidaknya salah satu kriteria: tanggal, keterangan, atau jumlah."}
+
+    try:
+        sheet = _get_sheet()
+        all_values = sheet.get_all_values()
+    except Exception as exc:
+        logger.exception("Gagal membaca Google Sheets")
+        return {"error": f"Gagal membaca spreadsheet: {exc}"}
+
+    if len(all_values) < 2:
+        return {"error": "Spreadsheet kosong, tidak ada data untuk dihapus."}
+
+    headers = all_values[0]
+
+    col_tgl = _find_column(headers, "Tgl", "Tanggal", "Date", "Tgl.")
+    col_keterangan = _find_column(headers, "Keterangan", "Ket", "Deskripsi", "Detail")
+    col_pengeluaran = _find_column(headers, "Pengeluaran", "Jumlah", "Nominal", "Harga", "Total", "Biaya")
+
+    if not all([col_tgl, col_keterangan, col_pengeluaran]):
+        logger.error("Kolom tidak lengkap. Header: %s", headers)
+        return {"error": f"Kolom Tgl/Keterangan/Pengeluaran tidak ditemukan. Header: {headers}"}
+
+    idx_tgl = headers.index(col_tgl)
+    idx_keterangan = headers.index(col_keterangan)
+    idx_pengeluaran = headers.index(col_pengeluaran)
+
+    normalized_filter = _parse_date_flexible(filter_date) if filter_date else None
+
+    matches = []
+    for row_idx, row in enumerate(all_values[1:], start=2):
+        if len(row) < len(headers):
+            row = row + [""] * (len(headers) - len(row))
+
+        tgl = str(row[idx_tgl]).strip() if idx_tgl < len(row) else ""
+        keterangan = str(row[idx_keterangan]).strip() if idx_keterangan < len(row) else ""
+        pengeluaran_raw = row[idx_pengeluaran] if idx_pengeluaran < len(row) else ""
+        pengeluaran = _normalize_pengeluaran(pengeluaran_raw)
+
+        if normalized_filter and _parse_date_flexible(tgl) != normalized_filter:
+            continue
+
+        if keyword and keyword not in keterangan.lower():
+            continue
+
+        if jumlah is not None and abs(pengeluaran - jumlah) > 1e-9:
+            continue
+
+        matches.append({
+            "row": row_idx,
+            "Tgl": tgl,
+            "Keterangan": keterangan,
+            "Pengeluaran": pengeluaran,
+        })
+
+    if not matches:
+        return {"error": "Tidak ditemukan data pengeluaran yang cocok dengan kriteria tersebut."}
+
+    if len(matches) > 1:
+        return {
+            "error": "Ditemukan beberapa data yang cocok. Berikan kriteria lebih spesifik.",
+            "matches": matches,
+        }
+
+    match = matches[0]
+    try:
+        sheet.delete_rows(match["row"])
+    except Exception as exc:
+        logger.exception("Gagal menghapus baris di Google Sheets")
+        return {"error": f"Gagal menghapus data: {exc}"}
+
+    return {
+        "success": True,
+        "message": (
+            f"Pengeluaran '{match['Keterangan']}' sebesar Rp{match['Pengeluaran']:,.0f} "
+            f"pada {match['Tgl']} berhasil dihapus."
+        ),
+        "data": {
+            "Tgl": match["Tgl"],
+            "Keterangan": match["Keterangan"],
+            "Pengeluaran": match["Pengeluaran"],
+        },
+    }
+
+
 TOOL_DECLARATIONS = [
     {
         "name": "add_expense",
@@ -275,8 +447,9 @@ TOOL_DECLARATIONS = [
     {
         "name": "get_expenses",
         "description": (
-            "Gunakan tool ini setiap kali user bertanya tentang pengeluaran, "
-            "misalnya: pengeluaran hari ini, total pengeluaran, daftar pengeluaran, "
+            "Gunakan tool ini setiap kali user bertanya tentang daftar/detail pengeluaran "
+            "atau menghitung total pengeluaran untuk periode/kategori tertentu dari baris-baris data, "
+            "misalnya: pengeluaran hari ini, daftar pengeluaran, "
             "atau pengeluaran untuk kategori/tanggal tertentu. "
             "Spreadsheet memiliki kolom: Tgl, Keterangan, Pengeluaran. "
             "Parameter filter_date (YYYY-MM-DD) untuk menyaring tanggal. "
@@ -312,6 +485,68 @@ TOOL_DECLARATIONS = [
             "required": [],
         },
     },
+    {
+        "name": "get_total_expenses",
+        "description": (
+            "Gunakan tool ini ketika user bertanya tentang total pengeluaran secara keseluruhan. "
+            "Membaca nilai dari cell E2 di spreadsheet. "
+            "Contoh: 'total pengeluaran berapa?', 'total pengeluaran saya berapa?'. "
+            "Jangan menebak; selalu panggil tool ini untuk pertanyaan tentang total pengeluaran."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
+    },
+    {
+        "name": "get_expense_summary",
+        "description": (
+            "Gunakan tool ini ketika user bertanya tentang total pengeluaran per tanggal, "
+            "pengeluaran paling banyak di tanggal berapa, atau pengeluaran paling sedikit. "
+            "Tool ini menghitung total pengeluaran per tanggal dari baris-baris spreadsheet. "
+            "Hasil diurutkan dari total tertinggi ke terendah. "
+            "Contoh: 'pengeluaran paling banyak di tanggal berapa?', "
+            "'tanggal paling sedikit pengeluarannya?', 'total pengeluaran per tanggal'. "
+            "Jangan menebak; selalu panggil tool ini untuk pertanyaan agregat per tanggal."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
+    },
+    {
+        "name": "delete_expense",
+        "description": (
+            "Gunakan tool ini saat user ingin MENGHAPUS data pengeluaran. "
+            "Contoh: 'hapus es krim 8k', 'hapus pengeluaran bensin', "
+            "'hapus data tanggal 2026-06-29', 'hapus makan siang 25 ribu'. "
+            "Tool ini akan menghapus baris jika hanya ada satu data yang cocok. "
+            "Jika ada beberapa data cocok, tool akan mengembalikan daftarnya; "
+            "mintalah user memberikan kriteria lebih spesifik (misalnya tambahkan tanggal atau jumlah). "
+            "Konversi singkatan seperti 8k → 8000 sebelum memanggil tool. "
+            "Jika user menyebut tanggal, konversi ke format YYYY-MM-DD."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "filter_date": {
+                    "type": "string",
+                    "description": "Tanggal pengeluaran dalam format YYYY-MM-DD. Opsional.",
+                },
+                "keyword": {
+                    "type": "string",
+                    "description": "Kata kunci di kolom Keterangan (case-insensitive). Opsional.",
+                },
+                "jumlah": {
+                    "type": "number",
+                    "description": "Nominal pengeluaran dalam angka, contoh 8000. Opsional.",
+                },
+            },
+            "required": [],
+        },
+    },
 ]
 
 
@@ -319,4 +554,7 @@ TOOL_FUNCTIONS = {
     "add_expense": add_expense,
     "get_expenses": get_expenses,
     "get_balance": get_balance,
+    "get_total_expenses": get_total_expenses,
+    "get_expense_summary": get_expense_summary,
+    "delete_expense": delete_expense,
 }

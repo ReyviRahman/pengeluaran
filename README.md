@@ -63,6 +63,28 @@ Bot akan menyimpan data ke kolom `Tgl`, `Keterangan`, dan `Pengeluaran` di Googl
 - `total pengeluaran minggu ini`
 - `daftar pengeluaran untuk makanan`
 
+### Total pengeluaran keseluruhan
+
+- `total pengeluaran berapa?`
+
+Bot akan membaca nilai dari cell `E2` di spreadsheet.
+
+### Agregasi pengeluaran per tanggal
+
+- `pengeluaran paling banyak di tanggal berapa?`
+- `tanggal paling sedikit pengeluarannya?`
+- `total pengeluaran per tanggal`
+
+Bot akan menghitung total pengeluaran per tanggal di sisi server sehingga hasilnya lebih akurat daripada membiarkan AI menjumlahkan sendiri.
+
+### Menghapus pengeluaran
+
+- `hapus es krim 8k` → menghapus pengeluaran "es krim" sebesar 8000 jika hanya ada satu data yang cocok.
+- `hapus pengeluaran bensin` → menghapus data dengan keterangan mengandung "bensin".
+- `hapus data tanggal 2026-06-29` → menghapus pengeluaran pada tanggal tertentu.
+
+Jika ada beberapa data yang cocok, bot akan menampilkan daftarnya dan meminta kriteria yang lebih spesifik.
+
 ## Menjalankan Aplikasi
 
 ```bash
