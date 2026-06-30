@@ -5,6 +5,7 @@ from fastapi import FastAPI, Header, HTTPException, Request
 
 import config
 import telegram
+import tools
 
 logging.basicConfig(
     level=logging.INFO,
@@ -67,6 +68,38 @@ async def manual_set_webhook():
     if result is None:
         raise HTTPException(status_code=503, detail="Gagal set webhook")
     return {"ok": True, "result": result}
+
+
+@app.get("/check-sheet")
+async def check_sheet():
+    """Cek koneksi ke Google Sheet yang dikonfigurasi.
+
+    Mengembalikan metadata spreadsheet dan header baris pertama worksheet aktif.
+    Berguna untuk memastikan credentials dan GOOGLE_SHEET_ID sudah benar.
+    """
+    if not config.GOOGLE_SHEET_ID:
+        raise HTTPException(status_code=400, detail="GOOGLE_SHEET_ID belum diatur di file .env")
+
+    try:
+        sheet = tools._get_sheet()
+        spreadsheet = sheet.spreadsheet
+        worksheets = [ws.title for ws in spreadsheet.worksheets()]
+        headers = sheet.row_values(1)
+    except FileNotFoundError as exc:
+        logger.exception("File credentials tidak ditemukan")
+        raise HTTPException(status_code=500, detail=f"File credentials tidak ditemukan: {exc}") from exc
+    except Exception as exc:
+        logger.exception("Gagal membuka Google Sheet")
+        raise HTTPException(status_code=503, detail=f"Gagal membuka Google Sheet: {exc}") from exc
+
+    return {
+        "ok": True,
+        "sheet_id": config.GOOGLE_SHEET_ID,
+        "title": spreadsheet.title,
+        "worksheets": worksheets,
+        "active_worksheet": sheet.title,
+        "headers": headers,
+    }
 
 
 if __name__ == "__main__":
