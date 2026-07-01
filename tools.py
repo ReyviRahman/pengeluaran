@@ -28,7 +28,11 @@ BULAN_ID = {
 
 
 def _get_sheet():
-    """Ambil worksheet pertama dari Google Sheet yang dikonfigurasi."""
+    """Ambil worksheet dari Google Sheet yang dikonfigurasi.
+
+    Jika GOOGLE_SHEET_NAME diatur, gunakan worksheet dengan nama tersebut.
+    Jika tidak, gunakan worksheet pertama (sheet1).
+    """
     credentials_path = os.getenv("GOOGLE_SHEETS_CREDENTIALS_PATH", "/app/credentials.json")
 
     creds = Credentials.from_service_account_file(
@@ -37,7 +41,10 @@ def _get_sheet():
     )
 
     client = gspread.authorize(creds)
-    return client.open_by_key(config.GOOGLE_SHEET_ID).sheet1
+    spreadsheet = client.open_by_key(config.GOOGLE_SHEET_ID)
+    if config.GOOGLE_SHEET_NAME:
+        return spreadsheet.worksheet(config.GOOGLE_SHEET_NAME)
+    return spreadsheet.sheet1
 
 
 def _find_column(headers: list[str], *candidates: str) -> str | None:
