@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import config
 import tools
 
 
@@ -326,3 +327,39 @@ def test_get_balance_berhasil():
     assert result["saldo_akhir"] == "Rp 5.000.000"
     assert result["cell"] == "F2"
     sheet.acell.assert_called_once_with("F2")
+
+
+def test_get_sheet_uses_sheet_name_when_configured():
+    mock_ws = MagicMock()
+    mock_spreadsheet = MagicMock()
+    mock_spreadsheet.worksheet.return_value = mock_ws
+    mock_client = MagicMock()
+    mock_client.open_by_key.return_value = mock_spreadsheet
+
+    with patch("tools.Credentials.from_service_account_file", return_value=MagicMock()), \
+         patch("tools.gspread.authorize", return_value=mock_client), \
+         patch.object(config, "GOOGLE_SHEET_ID", "sheet-id-123"), \
+         patch.object(config, "GOOGLE_SHEET_NAME", "Juli 2026"):
+        result = tools._get_sheet()
+
+    mock_client.open_by_key.assert_called_once_with("sheet-id-123")
+    mock_spreadsheet.worksheet.assert_called_once_with("Juli 2026")
+    assert result is mock_ws
+
+
+def test_get_sheet_falls_back_to_first_worksheet():
+    mock_ws = MagicMock()
+    mock_spreadsheet = MagicMock()
+    mock_spreadsheet.sheet1 = mock_ws
+    mock_client = MagicMock()
+    mock_client.open_by_key.return_value = mock_spreadsheet
+
+    with patch("tools.Credentials.from_service_account_file", return_value=MagicMock()), \
+         patch("tools.gspread.authorize", return_value=mock_client), \
+         patch.object(config, "GOOGLE_SHEET_ID", "sheet-id-123"), \
+         patch.object(config, "GOOGLE_SHEET_NAME", ""):
+        result = tools._get_sheet()
+
+    mock_client.open_by_key.assert_called_once_with("sheet-id-123")
+    mock_spreadsheet.worksheet.assert_not_called()
+    assert result is mock_ws

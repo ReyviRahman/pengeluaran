@@ -27,6 +27,7 @@ Project ini menerima pesan masuk dari Telegram Bot menggunakan webhook, lalu mem
    - `GEMINI_API_KEY`: API key dari [Google AI Studio](https://aistudio.google.com/app/apikey).
    - `GEMINI_MODEL`: model Gemini yang digunakan, default `gemini-1.5-flash`.
    - `GOOGLE_SHEET_ID`: ID spreadsheet Google Sheets yang berisi data pengeluaran.
+   - `GOOGLE_SHEET_NAME`: Nama worksheet/tab yang aktif, misalnya `Juli 2026`. Opsional; kosongkan untuk menggunakan worksheet pertama.
 
 ## Konfigurasi Google Sheets
 
